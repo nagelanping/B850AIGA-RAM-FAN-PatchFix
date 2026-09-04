@@ -1,9 +1,6 @@
 *.code-workspace
 
 release/
-!release/
-!release/linux/
-!release/linux/**
 
 # Python
 __pycache__/

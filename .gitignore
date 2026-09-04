@@ -13,6 +13,17 @@ tmp/ghidra_proj/
 # Rust
 patch/linux/target/
 
+# MSVC/Visual Studio 构建产物（最终输出 x64/ 与中间目录 <proj>\x64/、obj/）
+patch/windows/driver/x64/
+patch/windows/driver/ramfan/x64/
+patch/windows/driver/ramfan/obj/
+patch/windows/service/x64/
+patch/windows/service/ramfan-service/x64/
+patch/windows/service/ramfan-service/obj/
+
+# IDE 配置
+.vscode/
+
 # 逆向参考：可再生的大体积产物（UEFIExtract 解包、重复 ROM），
 # 磁盘保留，不入库
 ref/bios/bios.rom.dump/

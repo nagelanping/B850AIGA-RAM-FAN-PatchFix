@@ -113,12 +113,12 @@ WDM 仅在目标机无法使用 KMDF 时评估。禁止先实现 GUI、配置协
 
 ```text
 patch/windows/
-├── driver/                 # KMDF 驱动、INF、驱动测试
+├── driver/                 # KMDF 非 PnP 驱动、vcxproj（无 INF，SCM 直装）
 ├── service/                # Windows Service、--once、日志
 ├── build.ps1               # 可重复构建，不隐含关闭安全启动
 ├── install-test.ps1        # 测试签名安装，显式警告
 ├── uninstall.ps1
-└── README.md               # 目标机安装、验证、回滚
+└── WINDOWS.md              # 目标机安装、验证、回滚
 ```
 
 正式交付至少包含：签名驱动包、服务可执行文件、安装/卸载脚本、SHA-256、支持范围、已知限制和回滚步骤。没有合适签名时只能称为开发测试版，不宣称正式发布。

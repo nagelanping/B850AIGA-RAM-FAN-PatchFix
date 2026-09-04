@@ -4,8 +4,7 @@
 
 - **Linux 0.1 已归档**：实现和完整 Linux 工作记录位于 `archive/0.1/linux/`；发布包仍在 `release/linux/`。
 - **当前工作目标**：实现 Windows KMDF 内核驱动 + Windows Service，持续向 NCT `Virtual_TEMP` 喂入 DIMM 温度。
-- **当前阶段**：Windows 开发前的工作流已建立；尚未创建 `patch/windows/` 实现。
-- **修复路线**：优先 OS 软件补丁；不刷 BIOS。SMM 固件补丁仅在 OS 方案确认不可行后重新评估。
+- **当前阶段**：Windows 阶段 1（驱动骨架 + 只读 SMBus IOCTL）代码已完成，`patch/windows/` 已创建；待工具链就绪后本机构建，交子代理审查后进入阶段 2。
 
 ## 根因与目标链路
 
@@ -75,13 +74,13 @@ outb((v & 0xf0) | page, 0x296)
 
 ## Windows 待办
 
-1. 切换 Windows 后记录版本、Secure Boot、内存条数量、SMBus 控制器资源和驱动签名状态。
-2. 准备 Visual Studio、Windows SDK、WDK，建立 x64 KMDF Debug 工程和最小 Service。
-3. 阶段 1：完成驱动加载/卸载、硬件识别、设备句柄和只读 SMBus IOCTL；此阶段禁止写 NCT。
+1. ✅ 记录 Windows 环境（见下方 2026-09-04 Windows 环境记录）。
+2. ✅ 准备 VS + SDK + WDK（VS 2026 Community 18.9 / SDK 10.0.26100 已装；WDK 10.0.26100 安装中）；阶段 1 工程已建。
+3. ✅ 阶段 1 代码：驱动加载/卸载、硬件识别、设备句柄、只读 SMBus IOCTL；待构建与实机验证（禁止写 NCT）。
 4. 阶段 2：实现完整 `IOCTL_RAM_FAN_FEED_ONCE` 与 `--once`，目标机验证地址、温度、写入/读回及风扇响应。
 5. 阶段 3：启用 0.5 秒常驻服务，验证服务重启、睡眠恢复和系统重启后自动恢复。
 6. 阶段 4：完成空槽、单 DIMM 失败、全失败、超时、读回不一致、卸载回滚和内存加压测试。
-7. 代码完成后交子代理独立审查；机主实机验证结果、签名方式、版本和风险写回本文件。
+7. 阶段 1 代码完成后交子代理独立审查；机主实机验证结果、签名方式、版本和风险写回本文件。
 
 ## 风险与禁止事项
 
@@ -90,6 +89,37 @@ outb((v & 0xf0) | page, 0x296)
 - 不修改 page `0x09` 的曲线、模式、温度源或其他寄存器。
 - 不修改 BIOS、UEFI 变量或 SMM；刷写 BIOS 必须另行批准并备份、校验。
 - 如果 Windows 无法在可信签名和可接受安全边界内访问端口，停止扩展实现并记录原因，不绕过驱动签名策略交付。
+
+## 2026-09-04 Windows 环境记录（阶段 0 实机查询）
+
+- **OS**：Windows 11 专业工作站版 10.0.26200 (build 26200)，x64。
+- **Secure Boot**：当前 **False**（与 WORKFLOW 默认前提相反，已记录；测试签名驱动可用于开发测试，无需改 BIOS）。
+- **内存**：2×16GB DDR5-5600（DIMM1 P0 CHANNEL A / B），对应 SPD 7-bit 地址 `0x53/0x52` 两个已装槽。
+- **SMBus 控制器**：`PCI\VEN_1022&DEV_790B`（AMD FCH SMBus，rev 71），驱动 oem14.inf，状态 OK。
+- **SMBus 基址证据**：ACPI `PNP0C02\700` 声明 IO `0xb00-0xb0f`（与 Linux 实测 `0xb00` 一致）。
+- **NCT 端口证据**：`0x295/0x296` 落在 ACPI `PNP0C02\0` 声明的 `0x290-0x29F` 范围内，访问模型有 ACPI 背书。
+- **驱动签名策略**：`CI\Policy` V&R 键不存在；bcdedit 无 testsigning/integrity 输出（未开启测试签名）。
+- **工具链**：VS 2026 Community 18.9（MSVC 14.51）+ Windows SDK 10.0.26100 已装；WDK 10.0.26100 安装中；无 HWiNFO 类进程在跑。
+
+## 2026-09-04 Windows 阶段 1 骨架（patch/windows/）
+
+- 采用**非 PnP KMDF 驱动 + SCM 直装**：微软文档确认非 PnP KMDF 驱动在 Win10/11 无需 INF/co-installer，直接 `sc create`；驱动必须提供 `EvtDriverUnload` 并手动创建控制设备（`WdfDeviceInitAllocate` + `WdfDeviceCreate`）。已删 `ramfan.inf`。
+- `driver/ramfan_ioctl.h`：驱动/服务共享常量与 IOCTL（QUERY_HW / READ_DIMM_TEMP），不含内核头依赖。
+- `driver/hw.c`：PCI 扫描 FCH SMBus BAR（slot 编码 `device<<16|func<<8` 已验证）回退 ACPI `0xb00`；NCT chip id 走标准 SIO `0x2e/0x2f` 解锁读取后 `0xaa` 锁定；SMBus word-read 100ms 超时，`0x04` 判无设备、`0x02` 不判失败。
+- `driver/ramfan.c`：非 PnP 设备 `\Device\RamFanVirtTemp`，SDDL 限 SYSTEM/管理员；串行队列；只读 IOCTL。
+- `service/ramfan-service.c`：SCM 生命周期、`--once`（0=成功/1=硬件失败/2=参数错误）、`C:\ProgramData\RAMFan\ramfan.log`。
+- `build.ps1` / `install-test.ps1` / `uninstall.ps1` / `WINDOWS.md`：构建（vswhere+msbuild）、测试签名安装（Secure Boot 开启即拒绝）、回滚、文档。
+- **待办**：WDK 安装完成后本机构建验证；阶段 1 交子代理审查。
+
+## 2026-09-04 阶段 1 子代理独立审查（已修复）
+
+- 审查结论：结构/硬件事实/安全边界/阶段范围一致，**有条件通过**；验收前必须修复 S1。
+- **[严重] S1** `hw.c` 超时失效：`KeQueryPerformanceCounter` 返回计数器、频率为出参，原代码把 `start`/`now` 当出参接收频率，差值恒 0，BUSY 挂起时无限轮询阻塞服务 → 改为 `start = KeQueryPerformanceCounter(&freq)`、循环内 `now = KeQueryPerformanceCounter(NULL)`。
+- **[中等] M1** `WDF_FILEOBJECT_CONFIG_INIT` 参数错位：`RamFanEvtFileClose` 被放进 EvtFileCleanup 槽（WDK 1.33 参数序为 Create/Close/Cleanup）→ 移到第 2 槽。
+- **[中等] M2** 温度 UCHAR 截断先于 0..120 校验，越界值可折叠进有效区间 → `RamFanCelsiusFromRaw` 返回 ULONG，校验在截断前，合法后显式 `(UCHAR)` 转换。
+- **[中等] M3** 测试证书未导入 LocalMachine 信任存储（内核 CI 校验不可见 CurrentUser）→ 脚本导出证书并导入 `TrustedPublisher` + `Root`。
+- **[轻微]** bcdedit 无匹配行时 `.ToString()` 抛异常 → 加 null 防御；PCI 全量重扫/返回值校验等留阶段 2/3。
+- 修复后 Debug/Release 双配置构建通过：`ramfan.sys` 16.5KB、`ramfan-service.exe` 44.5KB。
 
 ## 2026-09-04 Windows 工作流轻量审查
 

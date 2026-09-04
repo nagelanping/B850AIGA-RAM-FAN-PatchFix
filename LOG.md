@@ -273,3 +273,24 @@ hwmon9 = nct6799
 - 决策：温度范围定 0–120°C；负温度（raw 高位为符号样式）换算后越界拒绝，不写入；`gitignore` 追加 `patch/linux/target/`，`Cargo.lock` 纳入版本管理。
 - 待办更新：等待机主按 `patch/linux/README.md` 做阶段 B `--once` 实机验证（含 0x50–0x53 与两个 spd5118 hwmon 对应关系、空槽返回状态、与内核驱动的并发确认）；通过后再部署阶段 C 常驻服务。
 - 审查遗留（不阻塞实机，长期部署前处理）：`known` DIMM 集合只增不减——空槽若偶发一次假成功会永久卡死写入；候选缓解为空槽状态实测后改为"连续 2 次成功才进 known"或"连续 N 轮缺失移出 known"。
+
+### 阶段 B 实机第 1 轮（2026-09-04，commit c100abf）
+
+- `--once` 运行：四地址全部失败——`0x53/0x51` sts=`0x02`，`0x52/0x50` sts=`0x06`（KILL/CRC 样式错误位）；程序正确拒绝写入（无样本不写），基线 `fan5=946 pwm5=55` 未受影响。行为符合设计。
+- 矛盾点：同一 OS 上 `exp2_smbus_probe.py` 同款序列历史上成功（38.0°C）。待判定是环境变化（内核 `i2c_piix4`/`spd5118` 占用 SMBus 控制器，对应 WORKFLOW 阶段 0 并发阻塞项）还是 exp2 现在也同样失败。
+- 判定实验（交机主）：重跑 exp2；列出 PCI SMBus 驱动绑定、i2c 适配器、hwmon 清单与 spd5118 读数。若 exp2 同样失败 → 按 WORKFLOW 阶段 0 第 2 条优先切换 sysfs 温度后端（spd5118 已在 hwmon5/7），raw SMBus 降为 fallback。
+
+### 阶段 B 实机第 2 轮与后端切换（2026-09-04）
+
+- 对照实验（同机同时段）：`exp2_smbus_probe.py` 的 raw `0xb00` 事务**成功**（`0x53` d0=192 d1=2 raw=704 → 44.0°C）。控制器未被内核独占，Rust 版失败不是并发阻塞。
+- 定位：差异在我方错误位判定。HST_STS 实测模式——`0x53/0x51` → sts=`0x02`，`0x52/0x50` → sts=`0x06`；结合 exp2 在 `0x53` 拿到有效数据、spd5118 恰好两个传感器：`bit1(0x02)` 是成功完成也会置位的位，`0x04`(CRC) 才标记无设备。结论供 Windows raw 实现复用：致命位至少含 `0x04`，`0x02` 须容忍。
+- 环境事实：`i2c_piix4`（piix4_smbus，端口 0xb00/0xb20）绑定 FCH SMBus Controller `1022:790b`；`spd5118` 内核模块维护两根 DIMM（hwmon4=41.25°C、hwmon6=43.25°C）。
+- 决策（WORKFLOW 阶段 0 第 2 条落地）：Linux 读取后端切换为 spd5118 sysfs（新增 `src/sysfs.rs`，按 hwmon name 扫描 `temp*_input`，毫摄氏度四舍五入、0-120°C 范围拒绝，负值/-ENODATA 视为读取失败→本轮不完整）；删除 raw SMBus 模块 `smbus.rs`。写入后端不变（页 0x0c reg 0x36 + 读回校验）。known 集合改为 hwmon 目录，目录消失（模块重载换号）自动移除重新学习。
+- 质量门：cargo test 2 项（舍入/范围）过，clippy 零告警，release 构建成功。待实机第 3 轮：`--once` 应读到两个传感器并写入最高温（预期 ~43°C），对照 pwm5/fan5。
+- 子代理审查（sysfs 版）：发现 1 项回归——参数解析复用了同一迭代器导致非法参数被静默接受（`any` 耗尽后 `find` 失效），已改为 collect 后判定并实机外验证 `foo --once`/`--bogus` 均 exit 2；known 保活增加 name 复核（`is_sensor`，防 hwmon 号复用）；README"不写 0°C"措辞澄清。LOW：LOG 中 hwmon5/7 与 hwmon4/6 编号为历史会话演进，非矛盾。
+
+### 阶段 B 实机第 3 轮——sysfs 后端闭环通过（2026-09-04）
+
+- `--once`：发现 hwmon6/hwmon4 两个 spd5118 传感器，samples=[44, 41]，写入最高值 44°C 读回一致，exit=0；基线 `fan5=944 pwm5=55` → 写后 `fan5=1571 pwm5=111`，单调响应与历史曲线吻合（30°C→76/1031、40°C→101/1326）。
+- 结论：Linux 读取（spd5118 sysfs）+ 写入（页 0x0c reg 0x36）单轮闭环实机验证通过。BIOS 内存风扇源保持 `0x0a` 未动。
+- 下一步（阶段 C 常驻服务前需先定）：nct6775 并发访问 NCT 口的实机确认；stale 策略（spd5118 长期读取失败时的行为）；unit 的 `ProtectSystem=strict` 下服务实际能否读 sysfs/写 /dev/port。

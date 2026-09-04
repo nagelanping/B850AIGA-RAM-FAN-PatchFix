@@ -1,19 +1,24 @@
-//! ram-fan-virtual-temp：把 DIMM 温度持续喂给 NCT6796D Virtual_TEMP（页 0x0c reg 0x36），
+//! ram-fan-virtual-temp：把 DIMM 温度持续喂给 NCT6796D Virtual_TEMP（SIO 页 0x0c reg 0x36），
 //! 使 FAN5=MEM_FAN 按 BIOS 曲线运行。用法：
 //!   ram-fan-virtual-temp           常驻，每 2s 一轮（systemd 服务）
 //!   ram-fan-virtual-temp --once    单次“读取→汇总→写入”，阶段 B 实机验证用
+//!
+//! 温度读取走内核 spd5118 hwmon（sysfs），避免与内核争抢 SMBus 控制器；
+//! 写入走 /dev/port 的 NCT SIO 端口（与 nct6775 驱动的并发在实机验证）。
 
 mod nct;
 mod port;
-mod smbus;
+mod sysfs;
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 const CYCLE: Duration = Duration::from_secs(2);
 
 fn main() {
-    let once = std::env::args().skip(1).any(|a| a == "--once");
-    if let Some(other) = std::env::args().skip(1).find(|a| a != "--once") {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let once = args.iter().any(|a| a == "--once");
+    if let Some(other) = args.iter().find(|a| a.as_str() != "--once") {
         eprintln!("unknown argument: {other}");
         eprintln!("usage: ram-fan-virtual-temp [--once]");
         std::process::exit(2);
@@ -33,7 +38,7 @@ fn main() {
         std::process::exit(if ok { 0 } else { 1 });
     }
 
-    let mut known: Vec<u8> = Vec::new();
+    let mut known: Vec<PathBuf> = Vec::new();
     let mut consec_fail: u32 = 0;
     loop {
         if run_cycle(&port, &mut known, false) {
@@ -45,47 +50,52 @@ fn main() {
                 eprintln!("WARN: {consec_fail} consecutive failed cycles");
             }
         }
-        // 周期含本轮硬件耗时，保持约 2s 间隔
         std::thread::sleep(CYCLE);
     }
 }
 
-/// 一轮：读全部候选 DIMM → 汇总最高值 → 写 Virtual_TEMP。
-/// 返回本轮是否成功写入。详细结果 verbose=true（--once）时逐地址打印。
-fn run_cycle(port: &port::Port, known: &mut Vec<u8>, verbose: bool) -> bool {
-    let results = smbus::read_all_dimm_temps(port);
+/// 一轮：读全部 spd5118 传感器 → 取最高 → 写 Virtual_TEMP。
+/// 返回本轮是否成功写入。verbose=true（--once）时逐传感器打印。
+fn run_cycle(port: &port::Port, known: &mut Vec<PathBuf>, verbose: bool) -> bool {
+    let hwmuns = sysfs::find_sensor_hwmuns();
+
+    // hwmon 目录消失或 name 已非 spd5118（模块卸载/换号复用）→ 从 known 移除，不算不完整。
+    known.retain(|d| sysfs::is_sensor(d));
+    for h in &hwmuns {
+        if !known.contains(h) {
+            known.push(h.clone());
+            if verbose {
+                eprintln!("found sensor: {}", h.display());
+            }
+        }
+    }
 
     let mut samples: Vec<u32> = Vec::new();
+    let mut incomplete = false;
     let mut first_err: Option<String> = None;
-    for (addr, res) in &results {
-        match res {
-            Ok(c) => {
-                samples.push(*c);
-                if !known.contains(addr) {
-                    known.push(*addr);
+    for dir in known.iter() {
+        for (path, res) in sysfs::read_hwmon_temps(dir) {
+            match res {
+                Ok(c) => samples.push(c),
+                Err(e) => {
+                    incomplete = true;
                     if verbose {
-                        eprintln!("found DIMM sensor at 7-bit addr 0x{addr:02x}");
+                        eprintln!("{}: {e}", path.display());
+                    } else if first_err.is_none() {
+                        first_err = Some(format!("{}: {e}", path.display()));
                     }
-                }
-            }
-            Err(e) => {
-                if verbose {
-                    eprintln!("addr 0x{addr:02x}: {e}");
-                } else if first_err.is_none() {
-                    first_err = Some(format!("addr 0x{addr:02x}: {e}"));
                 }
             }
         }
     }
 
-    // 汇总完整性（WORKFLOW.md §3.2）：曾经发现过的 DIMM 本轮缺失 → 本轮不完整，
-    // 不写入（保持上一次值），避免用偏低样本降速。空槽（从未成功过）不影响完整性。
-    let missing = known
-        .iter()
-        .any(|a| !results.iter().any(|(addr, r)| *addr == *a && r.is_ok()));
-    if samples.is_empty() || missing {
+    // 汇总完整性：任一已发现传感器读取失败 → 本轮不完整，不写入（保持上一次值）。
+    if samples.is_empty() || incomplete {
         if verbose {
-            eprintln!("no complete sample set (known={known:?}), skip write");
+            eprintln!(
+                "no complete sample set ({} sensors), skip write",
+                known.len()
+            );
         } else if let Some(e) = &first_err {
             eprintln!("cycle incomplete, skip write; first error: {e}");
         }
@@ -93,7 +103,7 @@ fn run_cycle(port: &port::Port, known: &mut Vec<u8>, verbose: bool) -> bool {
     }
 
     let tmax = *samples.iter().max().unwrap();
-    // celsius_valid 保证 tmax<=120，u8 转换不越界
+    // millideg_to_celsius 保证 tmax<=120，u8 转换不越界
     let val = tmax as u8;
     match nct::write_virtemp(port, val) {
         Ok(()) => {

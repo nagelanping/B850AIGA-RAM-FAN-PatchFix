@@ -1,8 +1,0 @@
-Type: Section
-Subtype: UI
-Offset: 5D8h
-Full size: 38h (56)
-Header size: 4h (4)
-Body size: 34h (52)
-Type: 15h
-Text: TcgPlatformSetupPeiPolicy

@@ -1,8 +1,0 @@
-Type: Section
-Subtype: UI
-Offset: 308Ch
-Full size: Eh (14)
-Header size: 4h (4)
-Body size: Ah (10)
-Type: 15h
-Text: ACPI

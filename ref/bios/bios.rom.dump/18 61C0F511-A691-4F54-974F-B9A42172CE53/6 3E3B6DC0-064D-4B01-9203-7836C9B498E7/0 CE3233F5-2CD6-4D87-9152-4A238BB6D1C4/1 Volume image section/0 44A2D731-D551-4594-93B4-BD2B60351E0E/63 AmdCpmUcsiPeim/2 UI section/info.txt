@@ -1,8 +1,0 @@
-Type: Section
-Subtype: UI
-Offset: 304h
-Full size: 22h (34)
-Header size: 4h (4)
-Body size: 1Eh (30)
-Type: 15h
-Text: AmdCpmUcsiPeim

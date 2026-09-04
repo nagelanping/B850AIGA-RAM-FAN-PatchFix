@@ -1,7 +1,0 @@
-Type: Section
-Subtype: Raw
-Offset: 12234h
-Full size: 8BEh (2238)
-Header size: 4h (4)
-Body size: 8BAh (2234)
-Type: 19h

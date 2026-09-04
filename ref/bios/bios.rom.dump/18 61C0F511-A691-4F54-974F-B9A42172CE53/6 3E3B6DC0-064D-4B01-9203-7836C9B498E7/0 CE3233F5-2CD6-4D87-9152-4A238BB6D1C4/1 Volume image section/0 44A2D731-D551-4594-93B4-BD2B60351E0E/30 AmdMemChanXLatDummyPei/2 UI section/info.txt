@@ -1,8 +1,0 @@
-Type: Section
-Subtype: UI
-Offset: 244h
-Full size: 32h (50)
-Header size: 4h (4)
-Body size: 2Eh (46)
-Type: 15h
-Text: AmdMemChanXLatDummyPei

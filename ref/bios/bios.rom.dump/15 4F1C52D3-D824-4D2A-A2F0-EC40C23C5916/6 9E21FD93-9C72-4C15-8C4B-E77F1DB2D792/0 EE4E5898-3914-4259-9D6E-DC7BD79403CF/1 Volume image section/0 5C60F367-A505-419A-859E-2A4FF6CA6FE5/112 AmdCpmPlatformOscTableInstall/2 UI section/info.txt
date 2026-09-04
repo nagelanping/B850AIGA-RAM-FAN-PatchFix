@@ -1,8 +1,0 @@
-Type: Section
-Subtype: UI
-Offset: E44h
-Full size: 40h (64)
-Header size: 4h (4)
-Body size: 3Ch (60)
-Type: 15h
-Text: AmdCpmPlatformOscTableInstall

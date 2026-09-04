@@ -1,7 +1,0 @@
-Type: Section
-Subtype: Raw
-Offset: 107Ch
-Full size: E2Ah (3626)
-Header size: 4h (4)
-Body size: E26h (3622)
-Type: 19h

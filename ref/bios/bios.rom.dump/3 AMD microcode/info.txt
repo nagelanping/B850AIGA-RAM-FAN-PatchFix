@@ -1,9 +1,0 @@
-Type: AMD microcode
-Subtype: 
-Base: 3DAB00h
-Offset: 3DAB00h
-Full size: 15C0h (5568)
-Body size: 15C0h (5568)
-Date: 13.06.2023
-CPU signature: 0000A611h
-Revision: 0A601119h

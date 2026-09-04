@@ -1,8 +1,0 @@
-Type: Section
-Subtype: UI
-Offset: 17058h
-Full size: Ch (12)
-Header size: 4h (4)
-Body size: 8h (8)
-Type: 15h
-Text: Bds

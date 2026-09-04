@@ -1,7 +1,0 @@
-Type: NVAR GUID store
-Subtype: 
-Base: 1DFFFF0h
-Offset: 3FF78h
-Full size: 10h (16)
-Body size: 10h (16)
-GUIDs in store: 1

@@ -12,3 +12,8 @@ tmp/ghidra_proj/
 
 # Rust
 patch/linux/target/
+
+# 逆向参考：可再生的大体积产物（UEFIExtract 解包、重复 ROM），
+# 磁盘保留，不入库
+ref/bios/bios.rom.dump/
+ref/MSiCraftB850AIGA16/Shell Update BIOS/EFI/BOOT/MSiCraftB850AIGA_E1.6D_011526.ROM

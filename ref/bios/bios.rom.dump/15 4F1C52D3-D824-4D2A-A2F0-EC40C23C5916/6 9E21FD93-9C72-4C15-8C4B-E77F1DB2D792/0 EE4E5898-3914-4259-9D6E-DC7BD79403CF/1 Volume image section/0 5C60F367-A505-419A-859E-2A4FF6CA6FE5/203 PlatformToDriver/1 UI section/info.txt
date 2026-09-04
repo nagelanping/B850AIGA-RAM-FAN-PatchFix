@@ -1,8 +1,0 @@
-Type: Section
-Subtype: UI
-Offset: E1Ch
-Full size: 26h (38)
-Header size: 4h (4)
-Body size: 22h (34)
-Type: 15h
-Text: PlatformToDriver

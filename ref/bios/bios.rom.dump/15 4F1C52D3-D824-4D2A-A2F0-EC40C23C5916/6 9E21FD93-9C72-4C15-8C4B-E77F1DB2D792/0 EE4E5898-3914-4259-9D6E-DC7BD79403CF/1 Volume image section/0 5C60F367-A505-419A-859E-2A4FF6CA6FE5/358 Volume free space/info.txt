@@ -1,6 +1,0 @@
-Type: Free space
-Subtype: 
-Offset: D0C0F0h
-Full size: F10h (3856)
-Body size: F10h (3856)
-

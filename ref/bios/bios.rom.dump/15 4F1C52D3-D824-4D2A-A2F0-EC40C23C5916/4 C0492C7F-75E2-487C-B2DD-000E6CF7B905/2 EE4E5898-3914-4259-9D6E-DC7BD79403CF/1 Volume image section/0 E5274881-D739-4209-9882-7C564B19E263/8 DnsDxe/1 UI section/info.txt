@@ -1,8 +1,0 @@
-Type: Section
-Subtype: UI
-Offset: A81Ch
-Full size: 12h (18)
-Header size: 4h (4)
-Body size: Eh (14)
-Type: 15h
-Text: DnsDxe

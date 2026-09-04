@@ -1,7 +1,0 @@
-Type: Padding
-Subtype: Non-empty
-Base: 3E48C0h
-Offset: 3E48C0h
-Full size: 2E6B40h (3042112)
-Body size: 2E6B40h (3042112)
-

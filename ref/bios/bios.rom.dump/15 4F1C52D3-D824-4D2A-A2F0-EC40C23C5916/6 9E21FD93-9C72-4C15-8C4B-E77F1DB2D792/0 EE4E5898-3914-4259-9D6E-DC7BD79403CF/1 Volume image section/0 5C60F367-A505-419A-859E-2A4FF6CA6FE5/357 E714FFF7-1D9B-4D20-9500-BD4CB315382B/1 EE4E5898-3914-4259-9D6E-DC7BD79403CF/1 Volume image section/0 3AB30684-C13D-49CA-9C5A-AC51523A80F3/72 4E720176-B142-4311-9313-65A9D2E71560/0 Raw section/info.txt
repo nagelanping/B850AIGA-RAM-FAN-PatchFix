@@ -1,7 +1,0 @@
-Type: Section
-Subtype: Raw
-Offset: 18h
-Full size: 417Eh (16766)
-Header size: 4h (4)
-Body size: 417Ah (16762)
-Type: 19h

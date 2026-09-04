@@ -1,8 +1,0 @@
-Type: Section
-Subtype: UI
-Offset: E34h
-Full size: 34h (52)
-Header size: 4h (4)
-Body size: 30h (48)
-Type: 15h
-Text: AmiPspSetPcdForRecovery

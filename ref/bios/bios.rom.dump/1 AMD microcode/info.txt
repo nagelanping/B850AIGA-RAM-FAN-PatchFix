@@ -1,9 +1,0 @@
-Type: AMD microcode
-Subtype: 
-Base: 3D9500h
-Offset: 3D9500h
-Full size: 15C0h (5568)
-Body size: 15C0h (5568)
-Date: 10.11.2024
-CPU signature: 0000A612h
-Revision: 0A60120Ch

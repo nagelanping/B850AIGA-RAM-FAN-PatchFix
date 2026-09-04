@@ -1,7 +1,0 @@
-Type: Section
-Subtype: Raw
-Offset: 18h
-Full size: CFCh (3324)
-Header size: 4h (4)
-Body size: CF8h (3320)
-Type: 19h

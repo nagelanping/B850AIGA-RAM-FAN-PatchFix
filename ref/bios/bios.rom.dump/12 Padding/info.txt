@@ -1,7 +1,0 @@
-Type: Padding
-Subtype: Non-empty
-Base: 6CC9C0h
-Offset: 6CC9C0h
-Full size: 240h (576)
-Body size: 240h (576)
-

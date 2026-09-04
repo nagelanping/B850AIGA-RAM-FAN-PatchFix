@@ -1,9 +1,0 @@
-Type: AMD microcode
-Subtype: 
-Base: 3DFA00h
-Offset: 3DFA00h
-Full size: 3820h (14368)
-Body size: 3820h (14368)
-Date: 21.02.2025
-CPU signature: 0000B440h
-Revision: 0B404032h

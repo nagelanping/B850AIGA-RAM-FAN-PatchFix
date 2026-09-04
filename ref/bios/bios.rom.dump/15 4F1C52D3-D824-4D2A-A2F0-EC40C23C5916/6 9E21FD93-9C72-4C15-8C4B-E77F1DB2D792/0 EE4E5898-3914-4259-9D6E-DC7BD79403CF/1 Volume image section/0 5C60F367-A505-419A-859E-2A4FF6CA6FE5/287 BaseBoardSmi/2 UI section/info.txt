@@ -1,8 +1,0 @@
-Type: Section
-Subtype: UI
-Offset: 267Ch
-Full size: 1Eh (30)
-Header size: 4h (4)
-Body size: 1Ah (26)
-Type: 15h
-Text: BaseBoardSmi

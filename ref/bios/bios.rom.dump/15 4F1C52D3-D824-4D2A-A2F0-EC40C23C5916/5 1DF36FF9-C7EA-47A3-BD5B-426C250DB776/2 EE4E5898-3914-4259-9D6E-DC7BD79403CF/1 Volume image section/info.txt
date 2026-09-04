@@ -1,7 +1,0 @@
-Type: Section
-Subtype: Volume image
-Offset: 24h
-Full size: 45004h (282628)
-Header size: 4h (4)
-Body size: 45000h (282624)
-Type: 17h

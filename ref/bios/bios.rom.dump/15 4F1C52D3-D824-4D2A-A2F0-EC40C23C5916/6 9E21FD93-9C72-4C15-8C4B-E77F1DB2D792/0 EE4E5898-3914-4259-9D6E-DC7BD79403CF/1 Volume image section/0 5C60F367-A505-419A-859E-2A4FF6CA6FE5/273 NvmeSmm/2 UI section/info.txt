@@ -1,8 +1,0 @@
-Type: Section
-Subtype: UI
-Offset: 3868h
-Full size: 14h (20)
-Header size: 4h (4)
-Body size: 10h (16)
-Type: 15h
-Text: NvmeSmm

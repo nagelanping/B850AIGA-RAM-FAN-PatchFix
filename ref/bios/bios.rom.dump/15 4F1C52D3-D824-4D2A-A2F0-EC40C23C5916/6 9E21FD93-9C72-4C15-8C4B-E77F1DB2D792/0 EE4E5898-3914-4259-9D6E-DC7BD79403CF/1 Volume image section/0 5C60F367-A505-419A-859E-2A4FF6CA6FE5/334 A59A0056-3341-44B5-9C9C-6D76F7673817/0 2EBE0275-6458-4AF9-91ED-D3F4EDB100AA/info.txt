@@ -1,8 +1,0 @@
-Type: Section
-Subtype: Freeform subtype GUID
-Offset: 18h
-Full size: 8Ah (138)
-Header size: 14h (20)
-Body size: 76h (118)
-Type: 18h
-Subtype GUID: 2EBE0275-6458-4AF9-91ED-D3F4EDB100AA

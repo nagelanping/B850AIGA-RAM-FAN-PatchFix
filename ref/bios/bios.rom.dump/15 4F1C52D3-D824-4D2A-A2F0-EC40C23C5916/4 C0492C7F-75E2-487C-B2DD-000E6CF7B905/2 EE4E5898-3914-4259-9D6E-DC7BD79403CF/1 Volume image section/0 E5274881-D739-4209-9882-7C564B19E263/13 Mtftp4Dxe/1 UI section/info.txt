@@ -1,8 +1,0 @@
-Type: Section
-Subtype: UI
-Offset: 7C1Ch
-Full size: 18h (24)
-Header size: 4h (4)
-Body size: 14h (20)
-Type: 15h
-Text: Mtftp4Dxe

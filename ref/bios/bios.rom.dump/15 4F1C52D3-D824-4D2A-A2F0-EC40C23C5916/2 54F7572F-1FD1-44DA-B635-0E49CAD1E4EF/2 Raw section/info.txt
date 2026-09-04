@@ -1,8 +1,0 @@
-Type: Section
-Subtype: Raw
-Base: 10200D0h
-Offset: 28h
-Full size: Ch (12)
-Header size: 4h (4)
-Body size: 8h (8)
-Type: 19h

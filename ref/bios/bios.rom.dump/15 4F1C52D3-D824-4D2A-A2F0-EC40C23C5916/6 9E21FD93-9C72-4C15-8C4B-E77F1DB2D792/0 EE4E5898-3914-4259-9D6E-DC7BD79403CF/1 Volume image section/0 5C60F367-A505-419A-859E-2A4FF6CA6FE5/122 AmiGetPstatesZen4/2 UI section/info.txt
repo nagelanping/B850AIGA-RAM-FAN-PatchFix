@@ -1,8 +1,0 @@
-Type: Section
-Subtype: UI
-Offset: 1634h
-Full size: 28h (40)
-Header size: 4h (4)
-Body size: 24h (36)
-Type: 15h
-Text: AmiGetPstatesZen4

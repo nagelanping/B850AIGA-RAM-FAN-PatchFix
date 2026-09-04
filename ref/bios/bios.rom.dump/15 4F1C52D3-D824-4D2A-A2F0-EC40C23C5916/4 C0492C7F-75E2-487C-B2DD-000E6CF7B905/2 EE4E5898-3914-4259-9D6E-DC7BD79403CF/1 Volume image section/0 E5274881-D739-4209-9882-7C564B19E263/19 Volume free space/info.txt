@@ -1,6 +1,0 @@
-Type: Free space
-Subtype: 
-Offset: 1EE400h
-Full size: C00h (3072)
-Body size: C00h (3072)
-

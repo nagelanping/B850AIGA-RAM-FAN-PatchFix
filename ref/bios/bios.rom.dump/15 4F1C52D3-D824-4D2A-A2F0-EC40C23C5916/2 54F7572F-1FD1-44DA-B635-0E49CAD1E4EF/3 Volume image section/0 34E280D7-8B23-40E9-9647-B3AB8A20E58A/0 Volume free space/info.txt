@@ -1,7 +1,0 @@
-Type: Free space
-Subtype: 
-Base: 1020158h
-Offset: 78h
-Full size: F88h (3976)
-Body size: F88h (3976)
-

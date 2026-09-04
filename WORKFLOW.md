@@ -7,9 +7,9 @@
 固定链路：
 
 ```text
-南桥 SMBus 0xb00 / SPD 0x53 / cmd 0x31
+spd5118 hwmon sysfs（内核经南桥 SMBus 读取 DIMM）
         ↓
-温度换算：((raw << 3) >> 5) * 25 / 100
+取全部有效传感器中的最高温度
         ↓
 NCT 页 0x0c / reg 0x36（°C × 1）
         ↓
@@ -26,7 +26,7 @@ NCT 智能风扇算法 → FAN5
 
 ## 2. 当前项目检查结果
 
-- `patch/linux/` 和 `patch/windows/` 当前为空，尚无构建系统或应用代码。
+- `patch/linux/` 已完成 Rust/systemd 实现；`patch/windows/` 尚为空。
 - 已有可运行的 Python 参考脚本：
   - `ref/scripts/exp1_virtemp_probe.py`：确认 NCT 页 `0x0c` reg `0x36`，并验证 30°C/40°C 会改变 PWM；
   - `ref/scripts/exp2_smbus_probe.py`：确认南桥 SMBus `0xb00` 可读取 DIMM 温度；
@@ -49,7 +49,7 @@ patch/linux/
 ├── src/
 │   ├── main.rs                 # 参数、日志、周期循环、退出处理
 │   ├── port.rs                 # /dev/port 的 pio read/write
-│   ├── smbus.rs                # Intel/AMD 南桥 HST SMBus word read
+│   ├── sysfs.rs                # spd5118 hwmon 温度读取
 │   └── nct.rs                  # NCT 页选择与 Virtual_TEMP 写入
 ├── ram-fan-virtual-temp.service
 └── README.md                   # 构建、安装、回滚、验证
@@ -78,7 +78,13 @@ write_u8(port: u16, value: u8) -> Result<()>
 - 错误使用 `io::Error` 向上传递，不吞掉硬件访问失败；
 - 不提供任意扫描、批量写入或自动探测接口。
 
-### 3.2 `smbus.rs`：读取并汇总 DIMM 温度
+### 3.2 温度读取：优先使用 spd5118 sysfs
+
+Linux 实现读取 `/sys/class/hwmon/hwmon*/name` 为 `spd5118` 的设备及其
+`temp*_input`，由内核 `i2c_piix4` 负责 SMBus 访问。用户态不再直接抢占 `0xb00`。
+具体 raw SMBus 序列和状态位结论保留在 `LOG.md`，供 Windows 方案参考。
+
+历史 raw SMBus 方案曾按以下方式实现：
 
 首版不只读一个槽位，而是轮询固件已确认的候选 SPD 设备地址，收集所有有效温度。这里统一使用 SMBus **7-bit 地址**：`[0x53, 0x52, 0x51, 0x50]`；写入 HST 的读地址字节分别是 `[0xa7, 0xa5, 0xa3, 0xa1]`。`0xa6 → 0xa4 → 0xa2 → 0xa0` 是固件内部使用的候选写格式地址，不直接作为 Rust API 的地址类型。
 
@@ -200,10 +206,10 @@ sudo systemctl enable --now ram-fan-virtual-temp.service
 ### 阶段 0：先消除长期运行阻塞项
 
 1. 确认 `0x50–0x53` 与两个 `spd5118` hwmon 读数的对应关系；确认空槽的返回状态。
-2. 确认现有 Linux SMBus 驱动是否能直接提供所需 DIMM 温度；若能，优先读取其 sysfs 数据，避免用户态直接抢占 `0xb00`。只有 sysfs 数据不足或不稳定时，才启用 raw `/dev/port` SMBus 读取。
-3. 对 raw SMBus 方案验证与内核驱动并发访问的影响；对 NCT `0x295/0x296` 验证与 `nct6775` hwmon 访问的竞争。用户态锁不能替代内核锁。
-4. 确认 HST 状态寄存器的完整错误位、事务完成条件和清状态时机。
-5. 定义 stale 超时策略：不能假设服务停止会清除 NCT 值；如采用保守高温写入，必须先实机确认该值对应高风扇转速。
+2. **已完成**：现有 Linux SMBus 驱动通过 `spd5118` sysfs 提供所需温度，Linux 使用 sysfs。
+3. **已完成（短时实测）**：nct6775 并发观察无毛刺；用户态 SIO 多步序列仍无法与内核访问原子化，保留理论竞态风险。
+4. **已完成（raw 参考）**：实测确认 bit1=`0x02` 可出现在有效事务中，`0x04` 为无设备/CRC 样式错误；Linux 不使用该 raw 路径。
+5. **已完成**：失败只跳过写入并告警，不设超时回退温度。
 
 ### 阶段 A：可测试的纯逻辑
 
@@ -215,7 +221,7 @@ sudo systemctl enable --now ram-fan-virtual-temp.service
 ### 阶段 B：硬件访问封装
 
 1. 实现 `port.rs`，先只做 `/dev/port` 单字节读写。
-2. 实现 SMBus 单次读，加入超时、BUSY 和完整错误状态处理；若阶段 0 选择 sysfs，则实现 sysfs 温度读取而非 raw SMBus。
+2. **已完成**：实现 `spd5118` sysfs 温度读取。
 3. 实现 NCT 页 `0x0c`、reg `0x36` 写入，写后读回确认。
 4. 增加 `--once` 验证入口，先完成“一次读取→汇总→一次写入”，避免直接进入长期服务循环。
 5. 由机主执行 root 实机测试；每次测试前记录原值和 `hwmon9/pwm5/fan5_input`。
@@ -225,12 +231,12 @@ sudo systemctl enable --now ram-fan-virtual-temp.service
 
 验收前提：阶段 B 的单次读写已成功，且写入 30°C/40°C 的响应与 `LOG.md` 中历史数据一致。
 
-1. 加入 2 秒循环和退出处理。
-2. 加入 systemd unit、安装和回滚文档。
-3. 从冷启动开始验证：不打开 BIOS 风扇页面，服务启动后曲线仍响应。
-4. 观察至少 10 分钟，记录 DIMM 温度、NCT 值、`pwm5`、`fan5_input`。
-5. 停止服务，确认 `0x0c:0x36` 通常保持最后一次成功值；不要预期自动回退到 941 rpm。验证失联/stale 策略后再决定是否写入保守高温值。
-6. 重启系统后，在不打开 BIOS 曲线页面的情况下验证服务自动恢复。
+1. **已完成**：加入 2 秒循环和 systemd unit。
+2. **已完成**：安装和回滚文档。
+3. **已完成**：服务启动后曲线响应。
+4. **部分完成**：已完成单轮和约 2 分钟并发观察；内存加压动态测试未形成有效升温数据。
+5. **已定案**：停止服务不清除最后值；失败只跳过写入并告警，不写回退温度。
+6. **待补**：系统重启后不打开 BIOS 曲线页面，确认服务自动恢复。
 
 ### 阶段 D：审查与记录
 
@@ -244,7 +250,7 @@ sudo systemctl enable --now ram-fan-virtual-temp.service
 
 ### 功能
 
-- 服务能从 `0xb00`、SPD `0x53`、命令 `0x31` 读到有效 DIMM 温度。
+- 服务能从 `spd5118` hwmon sysfs 读到有效 DIMM 温度（内核底层使用南桥 SMBus）。
 - 写入 NCT 页 `0x0c` reg `0x36` 后，读回值等于摄氏度整数。
 - `pwm5`/`fan5_input` 随 DIMM 温度和 BIOS 曲线变化，而不是固定约 941 rpm。
 - BIOS 内存风扇源仍为 `0x0a`，曲线和模式未被服务修改。
@@ -252,7 +258,7 @@ sudo systemctl enable --now ram-fan-virtual-temp.service
 
 ### 安全与可靠性
 
-- 无权限、SMBus 超时、SMBus 错误和 NCT I/O 错误均可观察；服务不会写入伪造温度。
+- 无权限、sysfs 读取错误和 NCT I/O 错误均可观察；服务不会写入伪造温度。
 - 温度异常时不执行越界的 `u8` 写入。
 - 停止服务不刷写、不持久化、不改变 BIOS 设置。
 - 默认只改目标值寄存器，风险范围小且重启可恢复。
@@ -268,7 +274,7 @@ sudo systemctl enable --now ram-fan-virtual-temp.service
 
 ## 7. 未决问题与升级条件
 
-- 多 DIMM 槽位是否必须轮询，以及如何选取多个读数（均值/最高值），由单槽位闭环实测后决定。
-- SMBus 控制器是否会被其他驱动并发访问尚未专门测量；若出现偶发冲突，先记录复现条件，再考虑互斥或内核接口，不提前增加锁协议。
+- Linux 多 DIMM 读取和取最高值已由 spd5118 sysfs 闭环验证。
+- NCT SIO 多步序列与 nct6775 的原子协调尚未实现；若出现偶发冲突，应改用内核协调接口，不在用户态增加假锁协议。
 - `/dev/port` 是否适合长期部署需在实际内核和权限配置下确认；若不稳定，再评估写一个最小内核驱动，而不是先引入复杂框架。
 - Windows 方案和 SMM 方案不阻塞 Linux 首个可用版本。

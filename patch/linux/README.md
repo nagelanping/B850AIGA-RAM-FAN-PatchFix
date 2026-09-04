@@ -19,7 +19,7 @@ sysfs 是优先路径；raw SMBus 结论（含 sts 位数据）保留在 LOG.md 
 cargo build --release
 ```
 
-## 实机验证（阶段 B，先于服务部署）
+## 实机验证（阶段 B，已完成）
 
 需要 root（`/dev/port`）。测试前记录基线：
 
@@ -62,8 +62,8 @@ sudo rm /etc/systemd/system/ram-fan-virtual-temp.service /usr/local/sbin/ram-fan
 - NCT 写失败或读回不一致：记 ERROR，下一轮重试。
 - 读取失败时不写 0°C、不写猜测值；仅写入传感器实际回报的 0–120°C 读数。
 
-## 已知未决（长期部署前确认）
+## 已验证状态与已知风险
 
-- ~~与 `nct6775` 并发访问 NCT 口~~：已通过（阶段 C 部署实机 2 分钟采样无毛刺，见 LOG）。
-`ProtectSystem=strict` sandbox：已验证通过（服务在 strict sandbox 下正常读写 /dev/port 与 /sys）。
+- ~~与 `nct6775` 并发访问 NCT 口~~：已通过短时观察（阶段 C 部署实机 2 分钟采样无毛刺，见 LOG）。用户态的多步 SIO 序列无法与内核驱动原子化，仍保留理论竞态风险。
+- `ProtectSystem=strict` sandbox：已验证通过（服务在 strict sandbox 下正常读写 `/dev/port` 与 `/sys`）。
 - ~~stale 策略~~：已定案（机主 2026-09-04）——失败只跳过写入并告警，不设超时回退值（见 LOG 阶段 C 准备）。

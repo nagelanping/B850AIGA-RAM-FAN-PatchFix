@@ -34,20 +34,31 @@ fn main() {
 
     if once {
         let mut known = Vec::new();
-        let ok = run_cycle(&port, &mut known, true);
+        let ok = match run_cycle(&port, &mut known, true) {
+            Ok(()) => true,
+            Err(e) => {
+                eprintln!("{e}");
+                false
+            }
+        };
         std::process::exit(if ok { 0 } else { 1 });
     }
 
     let mut known: Vec<PathBuf> = Vec::new();
     let mut consec_fail: u32 = 0;
     loop {
-        if run_cycle(&port, &mut known, false) {
-            consec_fail = 0;
-        } else {
-            consec_fail += 1;
-            // 连续失败降频日志，避免刷屏
-            if consec_fail == 1 || consec_fail.is_multiple_of(10) {
-                eprintln!("WARN: {consec_fail} consecutive failed cycles");
+        match run_cycle(&port, &mut known, false) {
+            Ok(()) => {
+                if consec_fail != 0 {
+                    eprintln!("INFO: cycle recovered after {consec_fail} failures");
+                }
+                consec_fail = 0;
+            }
+            Err(e) => {
+                consec_fail += 1;
+                if consec_fail == 1 || consec_fail.is_multiple_of(10) {
+                    eprintln!("WARN: {consec_fail} consecutive failed cycles: {e}");
+                }
             }
         }
         std::thread::sleep(CYCLE);
@@ -56,11 +67,25 @@ fn main() {
 
 /// 一轮：读全部 spd5118 传感器 → 取最高 → 写 Virtual_TEMP。
 /// 返回本轮是否成功写入。verbose=true（--once）时逐传感器打印。
-fn run_cycle(port: &port::Port, known: &mut Vec<PathBuf>, verbose: bool) -> bool {
-    let hwmuns = sysfs::find_sensor_hwmuns();
+fn run_cycle(port: &port::Port, known: &mut Vec<PathBuf>, verbose: bool) -> Result<(), String> {
+    let hwmuns = sysfs::find_sensor_hwmuns()
+        .map_err(|e| format!("scan /sys/class/hwmon failed, skip write: {e}"))?;
 
     // hwmon 目录消失或 name 已非 spd5118（模块卸载/换号复用）→ 从 known 移除，不算不完整。
-    known.retain(|d| sysfs::is_sensor(d));
+    let mut retained = Vec::with_capacity(known.len());
+    for dir in known.iter() {
+        match sysfs::is_sensor(dir) {
+            Ok(true) => retained.push(dir.clone()),
+            Ok(false) => {}
+            Err(e) => {
+                return Err(format!(
+                    "verify known sensor {} failed, skip write: {e}",
+                    dir.display()
+                ));
+            }
+        }
+    }
+    *known = retained;
     for h in &hwmuns {
         if !known.contains(h) {
             known.push(h.clone());
@@ -97,9 +122,11 @@ fn run_cycle(port: &port::Port, known: &mut Vec<PathBuf>, verbose: bool) -> bool
                 known.len()
             );
         } else if let Some(e) = &first_err {
-            eprintln!("cycle incomplete, skip write; first error: {e}");
+            return Err(format!("cycle incomplete, skip write; first error: {e}"));
+        } else {
+            return Err("cycle incomplete, skip write; no temperature samples".into());
         }
-        return false;
+        return Err("cycle incomplete, skip write".into());
     }
 
     let tmax = *samples.iter().max().unwrap();
@@ -110,11 +137,8 @@ fn run_cycle(port: &port::Port, known: &mut Vec<PathBuf>, verbose: bool) -> bool
             if verbose {
                 eprintln!("wrote Virtual_TEMP = {val}°C (samples={samples:?})");
             }
-            true
+            Ok(())
         }
-        Err(e) => {
-            eprintln!("ERROR: write Virtual_TEMP failed: {e}");
-            false
-        }
+        Err(e) => Err(format!("ERROR: write Virtual_TEMP failed: {e}")),
     }
 }

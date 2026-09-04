@@ -2,16 +2,16 @@
 
 ## 当前状态（置顶）
 
-- **Linux 补丁初版已实现（未实机测试）**：`patch/linux/` 完成 Rust 零依赖实现（`port.rs`/`smbus.rs`/`nct.rs`/`main.rs` + systemd unit + README），`cargo fmt/check/test/clippy` 全通过，含 `--once` 阶段 B 验证入口。等待机主实机测试（命令见 `patch/linux/README.md`）。
+- **Linux 补丁已完成并实机验证（pre 版本）**：`patch/linux/` 零依赖 Rust 服务（`port.rs`/`sysfs.rs`/`nct.rs`/`main.rs` + systemd unit + README），`cargo fmt/check/test/clippy` 全通过（4 项测试）。读取走 spd5118 sysfs（避免与内核争抢 SMBus 0xb00），写入 NCT 页 0x0c reg 0x36。实机闭环通过：`--once` samples=[44,41]→写 44°C，pwm5 55→111、fan5 944→1571；systemd 常驻、sandbox、nct6775 并发均验证通过。
 - **根因已确认**：内存风扇温度源被固件配置为 NCT6796D 的 `Virtual_TEMP`（src `0x0a`）。该通道没有硬件数据，必须由软件持续写入；固件只在 BIOS 打开内存风扇曲线页时喂值，重启后喂值停止，因此风扇回到低档（约 941 rpm）。
 - **关键链路已完整逆向**：南桥 SMBus `0xb00` 可读 DIMM 温度；温度写入 NCT 页 `0x0c`、reg `0x36` 后，`FAN5=MEM_FAN` 按曲线响应。
 - **前置实验已完成**：Virtual_TEMP 值寄存器定位成功；NCT 自身 `SMBUSMASTER` 路径排除。
 - **修复路线已定案**：软件补丁优先，Linux systemd 服务 + Windows 驱动/服务；SMM 固件补丁仅作备选，不先刷 BIOS。
-- **当前待办**：先实现并实测 Linux 服务，再实现 Windows 方案；只有 OS 方案不可行时才考虑 SMM。
+- **当前待办**：Linux 版本已完成 pre 验证；下一阶段实现 Windows 方案。只有 OS 方案不可行时才考虑 SMM。
 
 ## 最后更新
 
-**2025-09-04**：完成 M351/SkSmartFanProtocol 喂值链路逆向；完成 Virtual_TEMP 值寄存器实验和 SMBUSMASTER 排除实验；确定双系统 OS 层软件补丁路线。
+**2026-09-04**：完成 Linux sysfs 后端、systemd 部署和实机闭环验证；完成本轮代码复审及问题修复。
 
 ## 已确认关键数据（后续工作直接使用）
 
@@ -308,3 +308,10 @@ hwmon9 = nct6799
 - nct6775 并发判定：驱动加载后连续 12 次×10s 采样，`pwm5=109` 全程稳定、`fan5 1528-1549` 平滑，未回落基线（55/944）→ **并发无毛刺**。
 - 待补：内存加压下的温度→转速动态响应测试（stress-ng）。
 - **Linux 侧至此功能完成**，可打 pre 测试版本标签。
+
+### Linux 复审与修复（2026-09-04）
+
+- 子代理首次完整审查发现：空的 `temp*_input` 集合可能被忽略，导致只用剩余 DIMM 写入；常驻失败详情日志未按计数降频；LOG/WORKFLOW 状态落后。
+- 已修复：空目录/无 `temp*_input` 和目录枚举错误均使本轮失败；失败详情统一由主循环按首次/每 10 次输出，恢复时记录；新增 2 项 sysfs 读取测试，测试总数为 4。
+- 已同步 README、WORKFLOW 和 LOG。NCT SIO 多步访问与 `nct6775` 的原子协调无法由用户态实现，保留为已知理论竞态；此前机主短时并发观察无毛刺。
+- 子代理第二次完整复审：**通过，允许提交**。顶层 hwmon 错误、known name 错误、空输入、枚举错误和失败日志路径均已覆盖；4 项单元测试及全部非特权质量门通过。非阻断限制：重启恢复/有效动态升温尚未完成，SIO 多步访问仍有理论竞态。

@@ -300,3 +300,11 @@ hwmon9 = nct6799
 - stale 策略定案：**保持现状**——读取失败只跳过写入（保持最后一次值）+ 日志告警，不设超时回退温度。代码无需改动。
 - sandbox（ProtectSystem=strict）与 nct6775 并发两项测试：随阶段 C 部署执行（服务状态+日志判 sandbox；部署后连续采样 fan5/pwm5 判并发无毛刺），亦可推迟至 Linux pre 测试版本。
 - 阶段 C 部署命令见 `patch/linux/README.md`"安装为服务"节。
+
+### 阶段 C 部署实机通过（2026-09-04 18:27）
+
+- 服务已安装并 `enable --now`（开机自启生效：multi-user.target 符号链接已创建）。
+- sandbox 判定：`ProtectSystem=strict` 等全套限制下 `active (running)`，journalctl 无任何 denied/错误 → **sandbox 通过**（`/dev/port` 写与 `/sys` 读均可用）。
+- nct6775 并发判定：驱动加载后连续 12 次×10s 采样，`pwm5=109` 全程稳定、`fan5 1528-1549` 平滑，未回落基线（55/944）→ **并发无毛刺**。
+- 待补：内存加压下的温度→转速动态响应测试（stress-ng）。
+- **Linux 侧至此功能完成**，可打 pre 测试版本标签。

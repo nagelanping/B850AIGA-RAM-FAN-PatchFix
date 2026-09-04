@@ -65,5 +65,5 @@ sudo rm /etc/systemd/system/ram-fan-virtual-temp.service /usr/local/sbin/ram-fan
 ## 已知未决（长期部署前确认）
 
 - 与 `nct6775` hwmon 驱动并发访问 NCT `0x295/0x296` 的实机确认（读取路径已无竞争）。
-- `ProtectSystem=strict` 等 sandbox 项对 `/dev/port` 与 `/sys` 读取的实机影响。
-- 连续多轮 spd5118 读取失败（如模块被卸载后目录长期缺失）时的 stale 策略。
+`ProtectSystem=strict` sandbox 验证：并入阶段 C 部署自检（`systemctl status` + 日志），pre 测试版本本机执行。
+- ~~stale 策略~~：已定案（机主 2026-09-04）——失败只跳过写入并告警，不设超时回退值（见 LOG 阶段 C 准备）。

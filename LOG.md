@@ -294,3 +294,9 @@ hwmon9 = nct6799
 - `--once`：发现 hwmon6/hwmon4 两个 spd5118 传感器，samples=[44, 41]，写入最高值 44°C 读回一致，exit=0；基线 `fan5=944 pwm5=55` → 写后 `fan5=1571 pwm5=111`，单调响应与历史曲线吻合（30°C→76/1031、40°C→101/1326）。
 - 结论：Linux 读取（spd5118 sysfs）+ 写入（页 0x0c reg 0x36）单轮闭环实机验证通过。BIOS 内存风扇源保持 `0x0a` 未动。
 - 下一步（阶段 C 常驻服务前需先定）：nct6775 并发访问 NCT 口的实机确认；stale 策略（spd5118 长期读取失败时的行为）；unit 的 `ProtectSystem=strict` 下服务实际能否读 sysfs/写 /dev/port。
+
+### 阶段 C 准备决定（2026-09-04，机主）
+
+- stale 策略定案：**保持现状**——读取失败只跳过写入（保持最后一次值）+ 日志告警，不设超时回退温度。代码无需改动。
+- sandbox（ProtectSystem=strict）与 nct6775 并发两项测试：随阶段 C 部署执行（服务状态+日志判 sandbox；部署后连续采样 fan5/pwm5 判并发无毛刺），亦可推迟至 Linux pre 测试版本。
+- 阶段 C 部署命令见 `patch/linux/README.md`"安装为服务"节。

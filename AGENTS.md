@@ -2,59 +2,125 @@
 
 ## 项目简介
 
-铭瑄 MAXSUN MS-iCraft B850 AIGA 主板"内存风扇自定义曲线重启后失效"问题的修复工程。根因：固件把内存风扇温度源配为 NCT6796D 的 `Virtual_TEMP`（src 0x0a），该通道无硬件数据、必须软件喂值，而固件只在 BIOS 打开曲线页时才喂值，重启后不再喂值 → 风扇固定在低档（941rpm）。
+本项目修复铭瑄 MAXSUN MS-iCraft B850 AIGA 主板的“内存风扇自定义曲线重启后失效”问题。
 
-**修复方向（已定案）**：软件补丁优先 —— Linux systemd 服务 + Windows 驱动，双系统执行同一喂值逻辑：每 ~2s 读南桥 SMBus → 写 NCT 页 0x0C reg0x36。SMM 固件补丁仅备选（需刷写，变砖风险）。
+根因已确认：固件把 `FAN5=MEM_FAN` 的温度源配置为 NCT6796D 的 `Virtual_TEMP`（source `0x0a`）。该通道没有硬件数据，必须由软件持续喂值；固件只在 BIOS 打开内存风扇曲线页面时喂值，重启后停止，风扇因此回到约 941 rpm。
 
-## 关键已确认数据（勿重新调查，直接使用）
+**已定案的修复方向**：软件补丁优先。Linux 和 Windows 执行相同的核心逻辑：读取 DIMM 温度，写入 NCT `Virtual_TEMP`。SMM 固件补丁只作为最后备选，不得未经明确批准刷写 BIOS。
 
-- **Virtual_TEMP 值寄存器 = NCT 页 0x0C、reg 0x36**，温度编码 **°C×1**（写 0x1e=30°C）
-- 实测响应：写 30°C → pwm5=76/1031rpm；写 40°C → pwm5=101/1326rpm
-- **内存温度来源 = 南桥 SMBus 基址 0xb00**，从地址 0x53（0xa6/0xa7 读写位）、命令 0x31、读 2 字节，换算 `(raw<<3>>5)*25/100`；OS 下已验证可读（38.0°C）
-- NCT SIO 访问端口对 **0x295/0x296**；通道选择：`outb(0x4E,0x295); v=inb(0x296); outb((v&0xF0)|code,0x296)`，内存风扇 bank code=0x09
-- 芯片：NCT6796D-S（chip id 0xd802）；风扇头 FAN5=MEM_FAN
-- NCT 自身 SMBus 未物理连 DIMM（子方案 C 已排除）；NCT 硬件 18 路温度源无 DDR 温度
+## 关键已确认数据（勿重新调查）
 
-完整证据链与逆向档案在 **`LOG.md`**（12 节，含反汇编地址、实验数据、待办）。开始工作前先读它。
+- `Virtual_TEMP` 值寄存器：NCT page `0x0c`、reg `0x36`；编码为 `°C × 1`，例如 `0x1e` = 30°C。
+- 实测响应：写 30°C → `pwm5=76`、约 1031 rpm；写 40°C → `pwm5=101`、约 1326 rpm。
+- DIMM 温度来源：AMD FCH/南桥 SMBus，历史实测基址 `0xb00`。
+- SPD 访问：7-bit 地址优先轮询 `0x53, 0x52, 0x51, 0x50`，命令 `0x31`，读取 2 字节 word。
+- 温度换算：`scaled = (raw << 3) >> 5`；`celsius = (scaled * 25) / 100`。
+- SMBus 状态：`HST_STS bit1 (0x02)` 可在成功事务中置位；`0x04` 是无设备/CRC 样式错误。不能把 `0x02` 单独判为失败。
+- NCT SIO 端口：index `0x295`、data `0x296`。页选择必须保留高 4 位：
+
+  ```text
+  outb(0x4e, 0x295)
+  v = inb(0x296)
+  outb((v & 0xf0) | page, 0x296)
+  ```
+- 芯片：实测 chip id `0xd802`，NCT6796D-S / NCT6799D 兼容系列。
+- 内存风扇：`FAN5=MEM_FAN`，page/bank `0x09`；其 reg `0x00` 为温度源选择，值为 `0x0a`。
+- NCT 自身 `SMBUSMASTER` 读取 DIMM 的路径已排除；NCT 硬件温度源没有可用 DDR 温度。
+
+完整历史证据、固件地址和实验记录在 `archive/0.1/linux/LOG.md`；当前进度和 Windows 结果记录在根目录 `LOG.md`。
 
 ## 目录结构
 
-- `LOG.md` — 唯一进度/档案文件。**所有任务状态、新发现、待办都写在这里**，AGENTS.md 不记进度
-- `patch/linux/`、`patch/windows/` — 补丁实现目录（目前为空）
-- `ref/` — 逆向参考（只读）：
-  - `ref/bios/` — BIOS 镜像、UEFIExtract 解包、report/guids
-  - `ref/disasm/` — M351/SkSmartFanProtocol/SkSmartFanCtrlPei/Setup 反汇编（`dis_M351.txt` 34.8 万行）
-  - `ref/mods/` — 固件模块二进制（M351.bin、SkSmartFanCtrlPei.bin 等）
-  - `ref/kernel/` — `nct6775-core.c`（NCT 内核驱动源码，寄存器表权威参考）
-  - `ref/scripts/` — 实机探测/实验脚本（sio_probe.py、exp1_virtemp_probe.py、exp2_smbus_probe.py 等）
-  - `ref/misc/` — TE→flat 映像等
-- `tmp/` — 临时物（ghidra_proj 等，gitignore 排除，不存放有价值内容）
+- `LOG.md` — 当前项目进度、Windows 结果、待办和新发现。
+- `WORKFLOW.md` — 当前 Windows 开发工作流、阶段门槛和验收标准。
+- `archive/0.1/linux/` — Linux 0.1 的归档 `LOG.md`、`WORKFLOW.md` 和历史工作记录，不作为当前 Windows 状态文件。
+- `patch/linux/` — 已完成的 Linux Rust 服务、systemd unit 和开发文档。
+- `patch/windows/` — Windows KMDF 驱动和 Windows Service，后续开发目录。
+- `release/linux/` — Linux 发布包。
+- `ref/` — 只读逆向参考：
+  - `ref/bios/` — BIOS 镜像、UEFIExtract 解包、report、GUID 列表；
+  - `ref/disasm/` — M351、SkSmartFanProtocol、SkSmartFanCtrlPei、Setup 反汇编；
+  - `ref/mods/` — 固件模块二进制；
+  - `ref/kernel/nct6775-core.c` — NCT 驱动源码和温度源参考；
+  - `ref/scripts/` — 硬件探测与实验脚本；
+  - `ref/misc/` — TE 到 flat 映像等逆向辅助材料。
+- `tmp/` — 临时分析物，已 gitignore，不存放唯一有价值的证据。
 
-## 实机操作（重要约束）
+## Linux 维护边界
 
-- **本机是 Arch Linux 实机，Agent 会话无终端**：需要 root 的 `/dev/port` 访问必须由**机主执行**（sudo 需密码，Agent 无法交互输入）。交付命令清单，不自行执行
-- nct6775 驱动**每次重启后挂载丢失**，需先 `sudo modprobe nct6775`；hwmon9 出现后才有 fan/pwm/temp 读数
-- 常用命令（仓库根目录执行）：
-  - 探测：`sudo python3 ref/scripts/sio_probe.py`
-  - 值寄存器写测：`sudo modprobe nct6775 && sudo python3 ref/scripts/exp1_virtemp_probe.py`
-  - SMBus/硬件探测：`sudo python3 ref/scripts/exp2_smbus_probe.py`
-- 写 SIO 寄存器可逆（重启 BIOS 恢复），但改前记录原值；刷 BIOS 有变砖风险，需谨慎决策
+Linux 版本已基本完成实机闭环和 systemd 常驻验证；系统重启恢复和有效动态温升仍以归档记录为准。后续只做维护、修复和发布，不因 Windows 开发重新设计其链路。
+
+- 读取后端使用 `spd5118` hwmon sysfs，由 Linux 内核负责南桥 SMBus 访问，避免用户态直接抢占 SMBus。
+- 写入后端使用 `/dev/port`，只写 NCT page `0x0c` / reg `0x36`，写后读回校验。
+- 默认周期为 0.5 秒；读取全部有效 DIMM，取最高温度；本轮读取不完整时跳过写入并保留上一次完整值。
+- 温度有效范围为 `0..120°C`；异常值、负值和读取不完整均不得写入 NCT。
+- 运行时依赖为 Rust 标准库；修改后至少运行 `cargo fmt`、`cargo check`、`cargo test`、`cargo clippy`。
+- Linux 用户态多步 SIO 访问无法与 `nct6775` 完全原子协调；已有短时并发观察无毛刺，但该理论竞态仍须保留为已知风险。
+- 不修改 BIOS、风扇曲线、温度源选择或 `nct6775` 内核驱动。
+
+## Windows 开发边界
+
+Windows 版本优先采用 **KMDF 内核驱动 + Windows Service**，不把 WinRing0、InpOut32 等第三方驱动作为正式依赖。
+
+### 驱动职责
+
+- 驱动负责端口 I/O、SMBus 完整事务、状态位判断、温度换算、NCT 页选择、目标寄存器写回和读回校验。
+- 服务只调用最小的 `IOCTL_RAM_FAN_FEED_ONCE`，不接触裸端口，不接收任意寄存器地址。
+- 一次 IOCTL 完成“读取已安装 DIMM → 校验 → 取最高温 → 写入并读回校验”，驱动内部锁住完整序列。
+- 驱动必须从 PnP/PCI translated resources 确认 SMBus 端口；不能仅凭固定地址使用 `0xb00`。`0x295/0x296` 若不在绑定设备资源中，必须先确认合法访问模型。
+- 启动时检查目标 FCH SMBus 控制器和 NCT chip id；硬件不匹配则拒绝工作。
+- SMBus 超时必须有有限的状态清理/中止路径；不对共享控制器执行未经验证的强制复位。
+- NCT 写入前保存当前页，成功或失败时尽力恢复；只允许写 page `0x0c` / reg `0x36`。
+- 首轮先建立“已安装 DIMM”与 SPD 地址的映射：空槽 NACK 可忽略；已安装 DIMM 的超时、总线错误或异常状态使本轮整体失败，不能用剩余低温样本降速。
+
+### 服务职责
+
+- 服务负责 SCM 生命周期、0.5 秒调度、有限退避、`--once`、日志和错误重试。
+- 开发测试阶段使用 `SERVICE_DEMAND_START`；验收通过后才切换为自动启动。
+- `--once` 返回：成功 `0`，硬件或 I/O 失败 `1`，参数错误 `2`。
+- 服务停止不清除 NCT 最后写入值；读取失败时不写 0°C、不写猜测值。
+- 连续失败导致旧值过期是已知热安全风险，不能把“保持旧值”描述为完整 fail-safe；未经验证不得擅自写安全温度。
+- 驱动内部锁不能解决 HWiNFO、其他监控软件、ACPI/WMI 或固件访问造成的外部并发；目标机测试时停止其他会写 NCT/SMBus 的工具。
+
+### Windows 阶段门槛
+
+1. 先记录 Windows 版本、Secure Boot、驱动签名策略、内存条数量、SMBus 控制器和资源信息。
+2. 阶段 1 只实现驱动加载/卸载、硬件识别、设备句柄和只读 SMBus IOCTL；此阶段禁止写 NCT。
+3. 阶段 2 实现单次完整 IOCTL 和 `--once`，验证地址映射、空槽 NACK、已安装 DIMM 失败、超时、温度、写入/读回和风扇响应。
+4. 阶段 3 才启用常驻服务，验证服务重启、睡眠恢复和系统重启后自动恢复。
+5. 阶段 4 完成静态检查、x64 Release 构建、安装/卸载/回滚、动态温升和日志验证。
+6. Secure Boot 下正式交付必须有 Microsoft Attestation、WHQL 等可信签名；测试签名版只能作为开发测试版，不得绕过签名策略发布。
+
+## 实机操作约束
+
+- 当前 Agent 会话无 Windows 实机终端；需要管理员权限的 Windows 驱动安装、端口访问和硬件测试必须由机主执行。提供命令和检查项，不假设命令已执行。
+- Linux 实机需要 root 的 `/dev/port` 操作也必须由机主执行；每次重启后通常先执行 `sudo modprobe nct6775`，出现对应 hwmon 后再读取风扇数据。
+- 写 SIO 寄存器可逆，修改前记录原值；重启通常可由 BIOS 恢复。禁止未经明确批准刷 BIOS。
+- 不同时运行多个会写 `0x295/0x296` 的补丁或硬件监控工具。
+- 任何实机测试都要记录操作系统、BIOS、硬件、基线、命令、结果和未决风险。
 
 ## 已知陷阱
 
-- 路径已从旧 `tmp/` 迁至 `ref/`，LOG.md 中的路径均已更新，按其中的路径使用
-- 温度源 sysfs `temp_sel` 是通道号索引，不是 SRC 编码，勿混淆
-- `SkSmartFanSetupData` 变量在 efivarfs 不存在，不要假设能从 OS 侧持久化
-- Ghidra 12.1.2 与 JDK26 不兼容（脚本编译失败，见 `/home/Si/.pi/agent/PAPERCUTS.md`），用 objdump + flat-image
-- 无 xxd，用 od
+- 当前参考路径使用 `ref/`，Linux 历史文件使用 `archive/0.1/linux/`；不要恢复旧 `tmp/` 路径。
+- `temp_sel` 是 Linux hwmon 通道号索引，不是 NCT source 编码。
+- `SkSmartFanSetupData` 不存在于 efivarfs，不能依赖 OS 侧 UEFI 变量持久化。
+- NCT source `0x0a` 是 `Virtual_TEMP`，不要把它当作可直接读取的 DDR 硬件温度。
+- Windows 中 SPD 7-bit 地址和 SMBus 写入地址字节不要混淆：`0x53` 对应读地址字节 `0xa7`；固件记录的 `0xa6` 是另一种写格式表示。
+- Ghidra 12.1.2 与 JDK26 不兼容；固件分析使用已有 objdump/flat-image 结果，不为 Windows 开发重复建立 Ghidra 流程。
+- 系统无 `xxd` 时使用 `od`。
 
-## 工作流
+## 工作规则
 
-1. 任务前：阅读文档 `LOG.md` 和 `WORKFLOW.md`（状态、待办、已有证据），确认不重复已确认的工作
-2. 完成后：更新文档（新增发现/实验数据/待办变更）
-3. 提交前：见下方强制审查规则
-4. 编辑代码后：如有新增可 grep 的符号/陷阱，同步维护 `AGENTS.md`
+1. 开始任务前阅读根目录 `LOG.md`、`WORKFLOW.md`；涉及 Linux 历史证据时再读 `archive/0.1/linux/`，避免重复调查。
+2. 先查找现有实现和调用方，再新增代码；保持双系统核心数据链路一致，但使用各自系统的合法硬件访问接口。
+3. 不增加未经需要的 GUI、配置协议、可调周期、多后端或框架；先完成最小可验证闭环。
+4. 非平凡硬件逻辑至少留下一个可运行检查：单元测试、模拟测试或最小 `--once` 自检。
+5. 完成后更新根目录 `LOG.md` 的状态、证据、待办和风险；不要用删减历史的方式更新归档文件。
+6. 若新增可 grep 的硬件常量、访问陷阱或开发约束，同步维护本文件。
+7. 提交前检查 diff，确认没有误写曲线、温度源、BIOS 或无关寄存器。
 
-## 强制审查规则
+## 审查与提交
 
-**一项任务（主要是 patch/ 下的修改）确认完成后，必须交给子代理（subagent）独立审查，审查后并确认无误后才允许提交，commit 时格式使用声明式提交。** 审查重点：寄存器/端口/温度换算正确性、双系统行为一致性、与 LOG.md 已确认数据不矛盾、是否引入破坏性副作用。
+**每项大任务（尤其是 `patch/` 下的修改）完成后，必须交由子代理独立审查；审查通过并确认无误后才允许提交。**
+
+审查至少覆盖：寄存器和端口、SMBus 状态位、温度换算、Linux/Windows 行为、Windows IOCTL 边界、资源与签名限制、并发、失败和停止策略、与 `LOG.md` 已确认事实的一致性，以及是否引入破坏性副作用。提交使用声明式 commit message。

@@ -78,7 +78,7 @@ B850AIGA-RAM-FAN-PatchFix_Linux.tar.gz
 
 ## 源码和记录
 
-源码位于 `patch/linux/`。硬件实验、逆向资料和限制记录在 `LOG.md` 与 `WORKFLOW.md` 中。
+源码位于 `patch/linux/`。硬件实验、逆向资料和限制记录在 `./LOG.md` 及 `archive/` 下。
 
 ## 许可证
 

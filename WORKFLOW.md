@@ -1,279 +1,141 @@
-# Patch 工作流：Linux Rust 优先
+# Windows Patch 工作流
 
-## 1. 目标与边界
+## 1. 目标
 
-本项目的第一交付目标是 Linux 用户态服务：在 BIOS 保持“内存温度”数据源不变的情况下，持续把 DIMM 温度喂给 NCT6796D 的 `Virtual_TEMP`，使 `FAN5=MEM_FAN` 按原有 BIOS 曲线运行。
+为 MAXSUN MS-iCraft B850 AIGA 修复 Windows 下重启后内存风扇曲线失效：不修改 BIOS、不刷写固件、不改曲线配置，只持续把 DIMM 温度写入 NCT6796D 的 `Virtual_TEMP`，让 BIOS 已配置的 `FAN5=MEM_FAN` 曲线继续工作。
 
-固定链路：
-
-```text
-spd5118 hwmon sysfs（内核经南桥 SMBus 读取 DIMM）
-        ↓
-取全部有效传感器中的最高温度
-        ↓
-NCT 页 0x0c / reg 0x36（°C × 1）
-        ↓
-NCT 智能风扇算法 → FAN5
-```
-
-本阶段不做：
-
-- BIOS/SMM 修改或刷写；
-- 修改风扇曲线、模式或温度源选择；
-- 修改 `nct6775` 内核驱动；
-- Windows 实现；
-- 自定义配置协议、GUI 或后台守护进程框架。
-
-## 2. 当前项目检查结果
-
-- `patch/linux/` 已完成 Rust/systemd 实现；`patch/windows/` 尚为空。
-- 已有可运行的 Python 参考脚本：
-  - `ref/scripts/exp1_virtemp_probe.py`：确认 NCT 页 `0x0c` reg `0x36`，并验证 30°C/40°C 会改变 PWM；
-  - `ref/scripts/exp2_smbus_probe.py`：确认南桥 SMBus `0xb00` 可读取 DIMM 温度；
-  - `ref/scripts/sio_probe.py`、`sio_probe2.py`：用于只读探测和实机对照。
-- Rust 工具链可用：`cargo`、`rustc` 均已找到。
-- systemd 可用，目标部署为普通 system service。
-- 读写 `/dev/port` 需要 root 或等效的 `CAP_SYS_RAWIO`；实机测试命令仍由机主执行。
-- 详细硬件事实、实验数据和风险约束以 `LOG.md` 为准，不在本文件重复推翻。
-
-## 3. Linux patch 架构
-
-采用一个 Rust 二进制 + 一个 systemd unit。优先少依赖、少进程、少状态。
-
-建议目录：
+固定数据链路：
 
 ```text
-patch/linux/
-├── Cargo.toml
-├── Cargo.lock                  # 首次 cargo build 后提交
-├── src/
-│   ├── main.rs                 # 参数、日志、周期循环、退出处理
-│   ├── port.rs                 # /dev/port 的 pio read/write
-│   ├── sysfs.rs                # spd5118 hwmon 温度读取
-│   └── nct.rs                  # NCT 页选择与 Virtual_TEMP 写入
-├── ram-fan-virtual-temp.service
-└── README.md                   # 构建、安装、回滚、验证
+Windows 内核驱动
+  ├─ 南桥 SMBus 0xb00 → SPD5118 DIMM 温度
+  └─ NCT SIO 0x295/0x296 → 页 0x0c、reg 0x36（°C × 1）
+                                  ↓
+                         BIOS Smart Fan → FAN5
 ```
 
-不引入 async runtime、CLI framework、日志框架或硬件访问 crate。标准库足够：
+服务每 0.5 秒请求驱动执行一次完整喂值。读取失败或写入失败时跳过本轮，不写 0、不写猜测值，保持上一次成功值并记录告警。
 
-- `std::fs::File` + `FileExt::{read_at, write_at}` 访问 `/dev/port`；
-- `std::time::{Duration, Instant}` 控制定时；
-- `std::thread::sleep` 实现 0.5 秒周期；
-- `eprintln!` 输出 journald 可收集的日志。
+## 2. 已确认事实（不要重新逆向）
 
-### 3.1 `port.rs`：最小端口后端
+| 项目         | 值                                                                                               |
+| ------------ | ------------------------------------------------------------------------------------------------ |
+| 主板 / BIOS  | MAXSUN MS-iCraft B850 AIGA；E1.6D 已验证                                                         |
+| NCT 芯片     | 实测 chip id`0xd802`，NCT6796D-S / NCT6799D 兼容系列                                           |
+| 内存风扇     | `FAN5=MEM_FAN`，bank/page code `0x09`                                                        |
+| 温度源       | bank`0x09` 的 reg `0x00` = `0x0a`（`Virtual_TEMP`）                                      |
+| 写入目标     | NCT page`0x0c`、reg `0x36`                                                                   |
+| 温度编码     | 摄氏度整数，`0x1e` = 30°C                                                                     |
+| SMBus 基址   | `0xb00`（实机 FCH SMBus）                                                                      |
+| SPD 设备     | 7-bit 地址优先轮询`0x53, 0x52, 0x51, 0x50`；命令 `0x31`；word read                           |
+| 温度换算     | `scaled=(raw << 3) >> 5`；`celsius=(scaled * 25) / 100`                                      |
+| SMBus 成功位 | `HST_STS bit1 (0x02)` 可出现在成功事务；`0x04` 是无设备/CRC 样式错误，不能把 `0x02` 当失败 |
+| 页选择       | `outb(0x4e, 0x295)`；读 `0x296`；写 `(old & 0xf0) \| page`                                  |
+| 周期         | 0.5 秒                                                                                           |
 
-封装 `/dev/port`，只暴露：
+实测响应：写 30°C → `pwm5=76`、约 1031 rpm；写 40°C → `pwm5=101`、约 1326 rpm。Linux 已完成 sysfs 读取 + NCT 写回闭环；Linux 版本和详细证据在 `archive/0.1/linux/`，历史逆向材料在 `ref/`。
 
-```rust
-read_u8(port: u16) -> Result<u8>
-write_u8(port: u16, value: u8) -> Result<()>
-```
+## 3. Windows 方案边界
 
-实现要求：
+### 3.1 首选架构
 
-- 启动时打开 `/dev/port` 一次，循环复用同一个文件描述符；
-- 每次 `read_at`/`write_at` 必须检查返回长度是否为 1；
-- 错误使用 `io::Error` 向上传递，不吞掉硬件访问失败；
-- 不提供任意扫描、批量写入或自动探测接口。
+采用 **KMDF 内核驱动 + Windows Service**，不依赖 WinRing0、InpOut32 等第三方环路驱动。原因是 Windows 用户态不能直接可靠执行 I/O port，第三方驱动的签名、兼容性和安全边界不应成为正式交付物。
 
-### 3.2 温度读取：优先使用 spd5118 sysfs
+- 驱动负责：端口 I/O、SMBus 完整事务、状态位判断、温度换算、NCT 页选择和目标寄存器写回。
+- 服务负责：启动/停止、0.5 秒周期、日志、`--once` 验证入口和错误重试。
+- 驱动提供一个最小的 `IOCTL_RAM_FAN_FEED_ONCE`，一次调用完成“读取所有候选 DIMM → 校验 → 取最高温 → 写入并读回校验”。不要把多个裸端口操作暴露给服务。
+- 驱动内部用单次调用锁住完整硬件序列，防止本驱动的并发请求交错；不能假设它能与其他硬件监控程序或固件访问自动原子化。
+- 驱动只先实现并验证只读路径；在确认端口资源和 SMBus 所有权前，不进入写回和常驻服务。
 
-Linux 实现读取 `/sys/class/hwmon/hwmon*/name` 为 `spd5118` 的设备及其
-`temp*_input`，由内核 `i2c_piix4` 负责 SMBus 访问。用户态不再直接抢占 `0xb00`。
-具体 raw SMBus 序列和状态位结论保留在 `LOG.md`，供 Windows 方案参考。
+WDM 仅在目标机无法使用 KMDF 时评估。禁止先实现 GUI、配置协议、可调周期、固件补丁或多种后端。
 
-历史 raw SMBus 方案曾按以下方式实现：
+### 3.2 端口与 SMBus 实现要求
 
-首版不只读一个槽位，而是轮询固件已确认的候选 SPD 设备地址，收集所有有效温度。这里统一使用 SMBus **7-bit 地址**：`[0x53, 0x52, 0x51, 0x50]`；写入 HST 的读地址字节分别是 `[0xa7, 0xa5, 0xa3, 0xa1]`。`0xa6 → 0xa4 → 0xa2 → 0xa0` 是固件内部使用的候选写格式地址，不直接作为 Rust API 的地址类型。
+1. 不要在代码中无条件假设 SMBus 基址永远是 `0xb00`。首轮 Windows 实机先确认 PCI/FCH 资源；若资源仍为 `0xb00`，驱动使用该值并在启动日志记录。若变化，按 PCI 资源获取结果使用，并拒绝不符合预期的端口范围。
+2. 先确定驱动绑定的 PnP 设备和 translated resource list 是否包含 SMBus 端口；`0x295/0x296` 若不属于该资源，不能仅凭固定地址直接使用，必须先完成资源/访问模型验证。驱动启动时检查目标硬件身份（PCI FCH SMBus 控制器和 NCT chip id）；不匹配则设备不可用。
+3. 每个 SPD 地址执行完整 HST word-read：清状态、写从地址读格式、写命令 `0x31`、启动 `0x4c`、轮询 BUSY、检查错误位、读取两个数据字节。
+4. BUSY 超时、`0x04` 或其他明确错误、非法 raw、换算结果不在 `0..120°C` 均视为该地址失败。
+5. 首轮先用 HWiNFO/只读 SMBus 结果建立“已安装 DIMM”与 SPD 地址的映射。空槽 NACK 不算故障；已安装地址的超时、总线错误或异常状态算该轮失败。只有所有已安装 DIMM 都成功才写 NCT；首版取最高值，不用剩余低温值降速。
+6. NCT 写入严格只允许 page `0x0c` / reg `0x36`，写后读回必须一致；进入写入前保存当前页，成功或失败时尽力恢复。不得写 page `0x09` 的曲线或源选择寄存器。
+7. 所有端口访问失败返回明确 NTSTATUS。SMBus 超时必须先执行有限的状态清理/中止并确认 BUSY 已清除；若控制器仍不可恢复，停止本驱动的写回并报告错误，不对共享控制器做未经验证的强制复位。
+8. 驱动内部锁只覆盖本驱动；阶段 2 前必须停止会访问这些端口的 HWiNFO/同类工具并记录冲突观察。若外部并发导致事务不稳定，不得靠服务层加锁掩盖问题。
 
-每个地址执行一次完整 HST word-read：
+### 3.3 服务行为
 
-1. `base + 0x00` 写 `0xff` 清状态；
-2. `base + 0x04` 写 `((addr7 << 1) | 1)`；
-3. `base + 0x03` 写命令 `0x31`；
-4. `base + 0x02` 写 `0x4c` 启动 word read；
-5. 轮询 `base + 0x00`，等待 BUSY 清除，超时则该地址失败；
-6. 检查完整的、经实机确认的错误状态掩码；
-7. 读取 `base + 0x05`、`base + 0x06`，组成小端 `u16` 并换算温度。
+- Windows Service 使用 SCM 注册，默认 `SERVICE_DEMAND_START` 开发测试，验收后再设为自动启动（Delayed Auto-Start 不是必需项）。服务打开设备失败时有限退避重试，不能依赖固定启动顺序。
+- 默认启动即喂值；`--once` 完成一次 IOCTL 并返回：成功 `0`，硬件/读写失败 `1`，参数错误 `2`。
+- 使用 Windows Event Log 或统一文本日志；至少记录驱动连接失败、有效温度样本、写入值、读回值、连续失败次数和恢复事件。成功日志不按 0.5 秒刷屏。
+- 服务停止不清除 NCT 最后一次写入值；卸载不会修改 BIOS。卸载前明确告知该行为。
+- 设备句柄、服务线程和驱动资源必须在停止路径正确关闭；不做退出时写“安全温度”的未经验证行为。
 
-固件实际采用“首个成功地址”回退；本项目新增“轮询全部候选地址并取最高值”策略，不能将后者描述为固件行为。不存在设备或读失败的地址只记录为无效，不影响其他地址；只有所有地址都失败时，本轮才不写 NCT，继续等待下一轮。
+## 4. 实施阶段
 
-温度换算必须使用整数运算，避免浮点和溢出歧义：
+### 阶段 0：切换到 Windows 后确认环境
+
+机主在 Windows 记录：Windows 版本、Secure Boot 状态、内存条数量、设备管理器中的 SMBus 控制器、驱动签名策略和可用磁盘空间。安装 Visual Studio + Windows SDK + WDK，使用 x64 Debug 构建；不关闭 Secure Boot 作为默认前提。
+
+先用只读工具确认：
+
+- PCI FCH SMBus 资源是否为 `0xb00`；
+- NCT 芯片 id 是否为 `0xd802`；
+- BIOS 中 `FAN5` 温度源仍为“内存温度”且为 `0x0a`；
+- HWiNFO 等现有工具能看到 DIMM 温度（仅作对照，不让多个工具写 NCT）。
+
+### 阶段 1：驱动骨架和只读验证
+
+创建 `patch/windows/` 的 KMDF x64 工程、INF、签名/测试安装脚本和最小服务工程。先实现设备创建、IOCTL 通路、硬件识别和只读 SMBus 温度请求；此阶段禁止写 NCT。
+
+质量门：驱动能加载/卸载，服务能打开设备；错误状态可观察；不匹配硬件时拒绝工作；不会触碰风扇寄存器。
+
+### 阶段 2：一次性写回闭环
+
+加入 `IOCTL_RAM_FAN_FEED_ONCE` 的完整事务和 `--once` 服务入口。安装测试签名驱动前保存 Secure Boot / BCD 原状；测试结束恢复原设置。开发机先验证错误路径，再由机主在目标板执行：
+
+1. 记录 `fan5/pwm5` 基线以及 NCT 原值；
+2. 停止 Linux 或其他硬件监控写入方，避免同时访问 `0x295/0x296`；
+3. 运行 `--once`，记录每个地址结果、最高温度、写入和读回值；
+4. 对照 30°C / 40°C 历史响应，确认 `pwm5` 和 `fan5` 单调变化；
+5. 结束后重启，确认 BIOS 曲线和温度源未被改写。
+
+### 阶段 3：Windows 常驻服务
+
+一次性闭环通过后启用 0.5 秒循环和 SCM 自动启动。验证服务重启、睡眠恢复和系统重启后，在不打开 BIOS 曲线页的情况下自动恢复喂值。连续采样 `pwm5/fan5`，同时观察服务日志；不要以单次风扇读数作为唯一结论。连续失败导致旧值过期时，首版暂不擅自写安全温度，必须把旧值保持作为明确的热安全风险记录。
+
+动态验收至少包含：空槽、单 DIMM 读取失败、全部读取失败、SMBus 超时、NCT 读回不一致、服务停止/启动和短时内存加压。失败时应保持上次值，不应写 0°C。
+
+### 阶段 4：审查、打包和记录
+
+执行驱动静态检查、x64 Release 构建、服务自检和安装/卸载测试。提交前必须交子代理独立审查：端口、SMBus 状态位、温度换算、IOCTL 边界、NCT 写入范围、并发和失败策略，以及与 `LOG.md` 的一致性。机主完成目标机测试后，将版本、签名方式、命令、结果和未决风险写入 `LOG.md`，然后再制作发布包。启用 Secure Boot 的正式交付必须有 Microsoft Attestation/WHQL 等可信签名；否则只能交付明确标注的测试版。
+
+## 5. 目录与交付物
+
+首版保持最小结构：
 
 ```text
-scaled = (raw << 3) >> 5
-celsius = (scaled * 25) / 100
+patch/windows/
+├── driver/                 # KMDF 驱动、INF、驱动测试
+├── service/                # Windows Service、--once、日志
+├── build.ps1               # 可重复构建，不隐含关闭安全启动
+├── install-test.ps1        # 测试签名安装，显式警告
+├── uninstall.ps1
+└── README.md               # 目标机安装、验证、回滚
 ```
 
-`raw`、`scaled` 和中间乘积使用至少 `u32`。每个结果先检查合理 DIMM 温度范围，再加入有效样本集合。范围、符号语义和 SMBus 完整错误位必须在首轮实机验证前定下来。
-
-**温度汇总策略：首版取所有有效 DIMM 温度中的最高值。** 最高温度直接驱动 Virtual_TEMP，能避免某一条内存过热时被平均值掩盖，且实现和验证最简单。若某个已发现的 DIMM 本轮读取失败，应将本轮视为不完整并保留上一次完整汇总值，不能直接用剩余低温样本降速。
-
-最高值与平均值加权可作为后续校准选项，但不放入首个闭环版本：`T = round(α × max + (1-α) × average)`。只有实测表明最高值导致风扇波动过大时，才增加固定的 `α`（例如 0.75）配置并重新验证。
-
-### 3.3 `nct.rs`：写入 Virtual_TEMP
-
-只实现两个操作：选择页和写值。
-
-选择 bank/page 时严格保留固件序列，不能覆盖高 4 位：
-
-```text
-outb(0x4e, 0x295)
-v = inb(0x296)
-outb((v & 0xf0) | (page & 0x0f), 0x296)
-```
-
-写入：
-
-```text
-select_page(0x0c)
-outb(0x36, 0x295)
-outb(celsius as u8, 0x296)
-```
-
-安全边界：
-
-- 不写 bank `0x09` 的曲线和源选择寄存器；
-- 不修改模式、PWM、温度点或任何非 `0x36` 寄存器；
-- 默认每轮先读 SMBus，成功后才写 NCT；
-- 温度读取失败时保持上一次**完整汇总值**，不写 0°C，不写猜测值；必须定义 stale 超时后的失联策略（告警、退出或写入已验证的保守高温），不能假设服务停止会自动让风扇回到 941 rpm。
-
-### 3.4 `main.rs`：服务循环
-
-最小主循环：
-
-```text
-打开 /dev/port
-可选：启动时写入一次并记录结果
-loop:
-    读取 DIMM 温度
-    校验温度
-    写 Virtual_TEMP
-    记录成功/失败
-    sleep(0.5s)
-
-建议行为：
-
-- 默认周期 0.5 秒；使用常量，不增加命令行配置。
-- 保持零依赖首版不编写 signal handler：systemd 的 SIGTERM 直接终止进程，内核自动关闭 fd；不做退出时“恢复值”写入。若以后需要优雅停机逻辑，再单独引入 Unix signal 依赖；
-- 单次 SMBus 失败记录 warning，继续下一轮；连续失败不要刷屏，可做简单计数后按倍数降频日志；
-- NCT 写失败同样继续重试；启动时权限或 `/dev/port` 打开失败应直接退出，让 systemd 报错；
-- 日志至少包含读到的温度、写入值、错误类型和连续失败次数，便于与 `hwmon9/pwm5/fan5_input` 对照。
-
-## 4. systemd 部署设计
-
-`ram-fan-virtual-temp.service`：
-
-```ini
-[Unit]
-Description=Feed DIMM temperature to NCT Virtual_TEMP for RAM fan
-After=local-fs.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/sbin/ram-fan-virtual-temp
-Restart=on-failure
-RestartSec=2
-User=root
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-
-[Install]
-WantedBy=multi-user.target
-```
-
-首版不要加入会阻止 `/dev/port` 或降低硬件访问能力的 sandbox 选项；安装后逐项验证。`ProtectSystem=strict` 只影响文件系统写入，不应影响 `/dev/port`，但必须实机确认。若未来改为非 root 用户，再评估 `CAP_SYS_RAWIO` 和设备访问规则，不能凭空假设可行。
-
-安装/回滚步骤写入 `patch/linux/README.md`，基本流程：
-
-```bash
-cargo build --release
-sudo install -Dm755 target/release/ram-fan-virtual-temp /usr/local/sbin/ram-fan-virtual-temp
-sudo install -Dm644 ram-fan-virtual-temp.service /etc/systemd/system/ram-fan-virtual-temp.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now ram-fan-virtual-temp.service
-```
-
-回滚只停止并 disable 服务，再删除二进制和 unit；不涉及 BIOS 恢复。停止服务不会撤销最后一次写入，`0x0c:0x36` 通常会保持到 NCT 复位/重启；README 必须明确这一点。
-
-## 5. 实施顺序
-
-### 阶段 0：先消除长期运行阻塞项
-
-1. 确认 `0x50–0x53` 与两个 `spd5118` hwmon 读数的对应关系；确认空槽的返回状态。
-2. **已完成**：现有 Linux SMBus 驱动通过 `spd5118` sysfs 提供所需温度，Linux 使用 sysfs。
-3. **已完成（短时实测）**：nct6775 并发观察无毛刺；用户态 SIO 多步序列仍无法与内核访问原子化，保留理论竞态风险。
-4. **已完成（raw 参考）**：实测确认 bit1=`0x02` 可出现在有效事务中，`0x04` 为无设备/CRC 样式错误；Linux 不使用该 raw 路径。
-5. **已完成**：失败只跳过写入并告警，不设超时回退温度。
-
-### 阶段 A：可测试的纯逻辑
-
-1. 创建 Cargo binary，使用 Rust 2021 edition，保持零运行时依赖。
-2. 实现温度换算函数和边界检查。
-3. 为换算保留一个 `#[cfg(test)]` 单元测试：至少覆盖已知 `raw=608 → 38°C`、边界值和异常值。
-4. 用 `cargo fmt`、`cargo check`、`cargo test`。
-
-### 阶段 B：硬件访问封装
-
-1. 实现 `port.rs`，先只做 `/dev/port` 单字节读写。
-2. **已完成**：实现 `spd5118` sysfs 温度读取。
-3. 实现 NCT 页 `0x0c`、reg `0x36` 写入，写后读回确认。
-4. 增加 `--once` 验证入口，先完成“一次读取→汇总→一次写入”，避免直接进入长期服务循环。
-5. 由机主执行 root 实机测试；每次测试前记录原值和 `hwmon9/pwm5/fan5_input`。
-6. 验证四个候选地址、两个已知 DIMM 的对应关系，以及取最高值时单个传感器暂时失败的处理。
-
-### 阶段 C：闭环服务
-
-验收前提：阶段 B 的单次读写已成功，且写入 30°C/40°C 的响应与 `LOG.md` 中历史数据一致。
-
-1. **已完成**：加入 0.5 秒循环和 systemd unit。
-2. **已完成**：安装和回滚文档。
-3. **已完成**：服务启动后曲线响应。
-4. **部分完成**：已完成单轮和约 2 分钟并发观察；内存加压动态测试未形成有效升温数据。
-5. **已定案**：停止服务不清除最后值；失败只跳过写入并告警，不写回退温度。
-6. **待补**：系统重启后不打开 BIOS 曲线页面，确认服务自动恢复。
-
-### 阶段 D：审查与记录
-
-1. 运行格式化、静态检查、单元测试。
-2. 检查 diff，确认只写 `0x0c:0x36`，没有误写曲线或源选择。
-3. 交由子代理独立审查寄存器、端口、换算、失败行为和与 `LOG.md` 的一致性。
-4. 机主完成 root 实机验证后，把命令、结果、硬件环境和未解决问题写入 `LOG.md`。
-5. 只有测试和审查均通过，才提交声明式 commit。
+正式交付至少包含：签名驱动包、服务可执行文件、安装/卸载脚本、SHA-256、支持范围、已知限制和回滚步骤。没有合适签名时只能称为开发测试版，不宣称正式发布。
 
 ## 6. 验收标准
 
-### 功能
+- 目标机重启后服务自动启动，不打开 BIOS 页面也能喂值；
+- DIMM 温度读数与 HWiNFO/BIOS 对照在合理误差内；
+- `Virtual_TEMP` 写入和读回一致，`pwm5/fan5` 按原 BIOS 曲线响应；
+- 仅写 page `0x0c` / reg `0x36`，不改变曲线、模式或温度源；
+- 读取失败不会写伪造温度，服务可重试且日志不过量；
+- 驱动、服务可停止、卸载、回滚；不要求刷 BIOS；
+- Secure Boot 和驱动签名限制被明确记录；测试签名版不列为普通用户正式安装方案。
 
-- 服务能从 `spd5118` hwmon sysfs 读到有效 DIMM 温度（内核底层使用南桥 SMBus）。
-- 写入 NCT 页 `0x0c` reg `0x36` 后，读回值等于摄氏度整数。
-- `pwm5`/`fan5_input` 随 DIMM 温度和 BIOS 曲线变化，而不是固定约 941 rpm。
-- BIOS 内存风扇源仍为 `0x0a`，曲线和模式未被服务修改。
-- 服务重启、系统重启后均能自动工作，不需要打开 BIOS 页面。
+## 7. 失败转向条件
 
-### 安全与可靠性
-
-- 无权限、sysfs 读取错误和 NCT I/O 错误均可观察；服务不会写入伪造温度。
-- 温度异常时不执行越界的 `u8` 写入。
-- 停止服务不刷写、不持久化、不改变 BIOS 设置。
-- 默认只改目标值寄存器，风险范围小且重启可恢复。
-
-### 交付物
-
-- `patch/linux/Cargo.toml`
-- `patch/linux/Cargo.lock`
-- `patch/linux/src/*.rs`
-- `patch/linux/ram-fan-virtual-temp.service`
-- `patch/linux/README.md`
-- `LOG.md` 中的实机验证记录
-
-## 7. 未决问题与升级条件
-
-- Linux 多 DIMM 读取和取最高值已由 spd5118 sysfs 闭环验证。
-- NCT SIO 多步序列与 nct6775 的原子协调尚未实现；若出现偶发冲突，应改用内核协调接口，不在用户态增加假锁协议。
-- `/dev/port` 是否适合长期部署需在实际内核和权限配置下确认；若不稳定，再评估写一个最小内核驱动，而不是先引入复杂框架。
-- Windows 方案和 SMM 方案不阻塞 Linux 首个可用版本。
+- 若 Windows 无法在不引入不受信任第三方驱动的情况下获得安全的端口访问，暂停实现并记录原因；不要绕过签名策略交付。
+- 若 SMBus 被 Windows 驱动独占或 raw HST 访问不稳定，优先研究 Windows 可用的标准 SPD/SMBus 内核接口；不在服务层增加轮询竞争、全局用户态锁或 GUI。
+- 若无法获得合法的 NCT 端口资源/访问模型，或控制器超时后无法安全恢复，停在只读阶段，不实现写回。
+- 只有 OS 驱动方案确认不可行，才重新评估 SMM 固件方案；刷 BIOS 必须另行批准、备份和签名校验。

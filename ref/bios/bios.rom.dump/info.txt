@@ -1,0 +1,7 @@
+Type: Image
+Subtype: UEFI
+Base: 0h
+Offset: 0h
+Full size: 2000000h (33554432)
+Body size: 2000000h (33554432)
+

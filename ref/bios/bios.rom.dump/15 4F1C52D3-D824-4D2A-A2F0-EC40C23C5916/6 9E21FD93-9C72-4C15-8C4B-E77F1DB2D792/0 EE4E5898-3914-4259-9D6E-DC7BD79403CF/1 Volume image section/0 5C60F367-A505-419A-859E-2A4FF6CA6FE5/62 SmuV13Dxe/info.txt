@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: SmuV13Dxe
+Offset: 137838h
+Full size: A4B2h (42162)
+Header size: 18h (24)
+Body size: A49Ah (42138)
+File GUID: AC991242-FBB0-42FA-AEF4-AA9746FD68E1
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: B4h, valid
+Data checksum: AAh, valid

@@ -1,0 +1,8 @@
+Type: Section
+Subtype: UI
+Offset: C34h
+Full size: 20h (32)
+Header size: 4h (4)
+Body size: 1Ch (28)
+Type: 15h
+Text: SkNct6796DDxe

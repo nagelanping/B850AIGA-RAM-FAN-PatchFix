@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: HddSecurity
+Offset: 5070F8h
+Full size: C482h (50306)
+Header size: 18h (24)
+Body size: C46Ah (50282)
+File GUID: A9B700CF-019E-4D8B-A3A7-88E1EA01699E
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 68h, valid
+Data checksum: AAh, valid

@@ -1,0 +1,10 @@
+Type: NVAR entry
+Subtype: Full
+Text: StdDefaults
+Offset: 4h
+Full size: 364Fh (13903)
+Header size: 17h (23)
+Body size: 3638h (13880)
+Variable GUID: 4599D26F-1A11-49B8-B91F-858745CFF824
+GUID index: 0
+Attributes: 82h (AsciiName, Valid)

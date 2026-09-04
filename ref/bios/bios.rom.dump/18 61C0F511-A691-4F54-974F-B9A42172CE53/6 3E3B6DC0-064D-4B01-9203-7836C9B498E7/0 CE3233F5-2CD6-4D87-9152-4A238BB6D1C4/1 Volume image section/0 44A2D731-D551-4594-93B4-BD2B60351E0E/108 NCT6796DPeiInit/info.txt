@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: NCT6796DPeiInit
+Offset: 113008h
+Full size: F2Eh (3886)
+Header size: 18h (24)
+Body size: F16h (3862)
+File GUID: 9029F23E-E1EE-40D1-9382-36DD61A63EAA
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: DDh, valid
+Data checksum: AAh, valid

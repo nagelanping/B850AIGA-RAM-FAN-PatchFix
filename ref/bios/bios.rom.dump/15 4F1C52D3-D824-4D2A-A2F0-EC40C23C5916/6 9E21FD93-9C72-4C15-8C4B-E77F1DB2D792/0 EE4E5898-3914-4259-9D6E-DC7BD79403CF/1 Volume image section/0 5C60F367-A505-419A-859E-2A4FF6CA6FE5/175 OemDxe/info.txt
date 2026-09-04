@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: OemDxe
+Offset: 5735C0h
+Full size: 1056h (4182)
+Header size: 18h (24)
+Body size: 103Eh (4158)
+File GUID: 8ACF9B15-E80E-427F-B17A-B6E12D946A9D
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 49h, valid
+Data checksum: AAh, valid

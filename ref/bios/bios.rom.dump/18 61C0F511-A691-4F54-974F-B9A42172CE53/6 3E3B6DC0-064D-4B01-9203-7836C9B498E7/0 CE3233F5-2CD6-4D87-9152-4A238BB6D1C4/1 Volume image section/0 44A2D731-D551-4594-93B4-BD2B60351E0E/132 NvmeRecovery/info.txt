@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: NvmeRecovery
+Offset: 17F1D0h
+Full size: 18D8h (6360)
+Header size: 18h (24)
+Body size: 18C0h (6336)
+File GUID: 00026AEB-F334-4C15-A7F0-E1E897E9FE91
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: BCh, valid
+Data checksum: AAh, valid

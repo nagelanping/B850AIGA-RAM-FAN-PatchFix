@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmdNbioDxe
+Offset: 11A968h
+Full size: 1CECAh (118474)
+Header size: 18h (24)
+Body size: 1CEB2h (118450)
+File GUID: 50578334-FCFD-4DCA-B3AF-47DD76E946CF
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: F8h, valid
+Data checksum: AAh, valid

@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: TcpDxe
+Offset: 12790h
+Full size: D03Eh (53310)
+Header size: 18h (24)
+Body size: D026h (53286)
+File GUID: 1A7E4468-2F55-4A56-903C-01265EB7622B
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: EEh, valid
+Data checksum: AAh, valid

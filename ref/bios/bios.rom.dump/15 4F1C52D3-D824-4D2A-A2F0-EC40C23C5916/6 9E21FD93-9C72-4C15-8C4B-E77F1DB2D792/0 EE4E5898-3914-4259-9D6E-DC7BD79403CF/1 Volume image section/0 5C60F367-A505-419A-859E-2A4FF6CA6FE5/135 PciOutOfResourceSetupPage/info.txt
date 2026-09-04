@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: PciOutOfResourceSetupPage
+Offset: 4B9400h
+Full size: 508Ah (20618)
+Header size: 18h (24)
+Body size: 5072h (20594)
+File GUID: CDC1C80D-E6D3-4A42-9229-75F3BEFCF109
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: A0h, valid
+Data checksum: AAh, valid

@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: AmdFabricPhxPei
+Offset: 27AE8h
+Full size: 296Eh (10606)
+Header size: 18h (24)
+Body size: 2956h (10582)
+File GUID: 0F9DD4B0-599E-4D66-8565-22FBEA1E028C
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: ECh, valid
+Data checksum: AAh, valid

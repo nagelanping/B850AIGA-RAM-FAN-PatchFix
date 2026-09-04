@@ -1,0 +1,10 @@
+Type: NVAR entry
+Subtype: Full
+Text: AMD_PBS_SETUP
+Offset: 2BE0h
+Full size: 119h (281)
+Header size: 19h (25)
+Body size: 100h (256)
+Variable GUID: A339D746-F678-49B3-9FC7-54CE0F9DF226
+GUID index: 14
+Attributes: 82h (AsciiName, Valid)

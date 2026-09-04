@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: CbsBasePeiPHX
+Offset: B5E60h
+Full size: 73C2h (29634)
+Header size: 18h (24)
+Body size: 73AAh (29610)
+File GUID: 3297DA1A-161B-4D35-BCAC-D1597B6BDC01
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 00h, valid
+Data checksum: AAh, valid

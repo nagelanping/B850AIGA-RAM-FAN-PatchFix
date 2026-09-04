@@ -1,0 +1,8 @@
+Type: Section
+Subtype: UI
+Offset: 3858h
+Full size: 16h (22)
+Header size: 4h (4)
+Body size: 12h (18)
+Type: 15h
+Text: PiSmmIpl

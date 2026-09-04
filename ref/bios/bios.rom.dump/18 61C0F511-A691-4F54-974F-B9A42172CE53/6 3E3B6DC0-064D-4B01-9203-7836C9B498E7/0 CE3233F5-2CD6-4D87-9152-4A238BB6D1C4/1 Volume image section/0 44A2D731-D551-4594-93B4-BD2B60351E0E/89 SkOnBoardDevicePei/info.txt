@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: SkOnBoardDevicePei
+Offset: FDA10h
+Full size: 5D2h (1490)
+Header size: 18h (24)
+Body size: 5BAh (1466)
+File GUID: FEB817B5-5006-4DAD-B3B7-B72E26FF3EC3
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: DCh, valid
+Data checksum: AAh, valid

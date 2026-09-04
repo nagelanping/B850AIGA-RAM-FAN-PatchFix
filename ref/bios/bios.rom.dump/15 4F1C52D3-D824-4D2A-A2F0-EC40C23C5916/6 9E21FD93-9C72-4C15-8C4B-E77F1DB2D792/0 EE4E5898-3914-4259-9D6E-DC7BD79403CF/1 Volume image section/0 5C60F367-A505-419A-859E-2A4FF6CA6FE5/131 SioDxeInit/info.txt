@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: SioDxeInit
+Offset: 4AA9D0h
+Full size: 245Eh (9310)
+Header size: 18h (24)
+Body size: 2446h (9286)
+File GUID: 4E82091E-32A1-4689-8A00-CDE41ED63CDD
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 96h, valid
+Data checksum: AAh, valid

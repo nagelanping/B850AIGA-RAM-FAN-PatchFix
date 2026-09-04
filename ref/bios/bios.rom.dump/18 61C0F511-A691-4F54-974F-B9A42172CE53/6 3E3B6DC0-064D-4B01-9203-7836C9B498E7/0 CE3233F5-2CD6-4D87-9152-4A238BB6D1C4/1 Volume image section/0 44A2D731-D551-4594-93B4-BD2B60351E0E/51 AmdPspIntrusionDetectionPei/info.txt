@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: AmdPspIntrusionDetectionPei
+Offset: 962D8h
+Full size: AAEh (2734)
+Header size: 18h (24)
+Body size: A96h (2710)
+File GUID: 6C77FAE1-A934-457A-982E-BCC12F9717AD
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 1Bh, valid
+Data checksum: AAh, valid

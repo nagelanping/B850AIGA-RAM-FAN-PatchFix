@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmdCpmSharedBDxe
+Offset: 2F1470h
+Full size: 347Ah (13434)
+Header size: 18h (24)
+Body size: 3462h (13410)
+File GUID: 733A7387-B758-443C-B880-E1EA51497252
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: B4h, valid
+Data checksum: AAh, valid

@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmdMcaZen4Dxe
+Offset: A87C8h
+Full size: 28BAh (10426)
+Header size: 18h (24)
+Body size: 28A2h (10402)
+File GUID: 3F27C867-4720-4537-8D0C-20F32FF30C04
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: C1h, valid
+Data checksum: AAh, valid

@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: AmdNbioPei
+Offset: 68898h
+Full size: 1387Ah (79994)
+Header size: 18h (24)
+Body size: 13862h (79970)
+File GUID: 3924C33A-125E-40A8-8450-38C6671E021D
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 1Fh, valid
+Data checksum: AAh, valid

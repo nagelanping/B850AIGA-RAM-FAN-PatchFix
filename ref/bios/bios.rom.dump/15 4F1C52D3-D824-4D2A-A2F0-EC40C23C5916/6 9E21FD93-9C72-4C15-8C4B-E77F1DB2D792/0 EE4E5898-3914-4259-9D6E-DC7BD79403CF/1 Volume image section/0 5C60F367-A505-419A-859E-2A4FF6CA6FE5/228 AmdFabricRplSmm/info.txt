@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: AmdFabricRplSmm
+Offset: 689198h
+Full size: 289Ah (10394)
+Header size: 18h (24)
+Body size: 2882h (10370)
+File GUID: C3EF34B6-057D-4614-B35D-FD4384FA2391
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: 3Ah, valid
+Data checksum: AAh, valid

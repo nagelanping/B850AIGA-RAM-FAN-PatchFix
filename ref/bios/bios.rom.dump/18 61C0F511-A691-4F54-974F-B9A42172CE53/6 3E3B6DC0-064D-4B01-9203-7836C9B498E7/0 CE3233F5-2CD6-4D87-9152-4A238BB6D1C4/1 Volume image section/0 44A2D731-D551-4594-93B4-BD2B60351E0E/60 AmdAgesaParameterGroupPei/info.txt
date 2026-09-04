@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: AmdAgesaParameterGroupPei
+Offset: C03F0h
+Full size: 240Ah (9226)
+Header size: 18h (24)
+Body size: 23F2h (9202)
+File GUID: 1DE2AB60-EB98-4D6B-9DCE-A7EF2202B33E
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 71h, valid
+Data checksum: AAh, valid

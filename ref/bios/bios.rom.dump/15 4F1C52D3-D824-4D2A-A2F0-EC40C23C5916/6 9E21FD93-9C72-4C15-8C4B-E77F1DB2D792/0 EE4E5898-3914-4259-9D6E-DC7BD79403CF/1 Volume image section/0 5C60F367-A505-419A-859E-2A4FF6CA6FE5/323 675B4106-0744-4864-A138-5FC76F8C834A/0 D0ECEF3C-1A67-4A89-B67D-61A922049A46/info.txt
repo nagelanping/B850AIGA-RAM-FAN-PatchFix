@@ -1,0 +1,8 @@
+Type: Section
+Subtype: Freeform subtype GUID
+Offset: 18h
+Full size: AE14h (44564)
+Header size: 14h (20)
+Body size: AE00h (44544)
+Type: 18h
+Subtype GUID: D0ECEF3C-1A67-4A89-B67D-61A922049A46

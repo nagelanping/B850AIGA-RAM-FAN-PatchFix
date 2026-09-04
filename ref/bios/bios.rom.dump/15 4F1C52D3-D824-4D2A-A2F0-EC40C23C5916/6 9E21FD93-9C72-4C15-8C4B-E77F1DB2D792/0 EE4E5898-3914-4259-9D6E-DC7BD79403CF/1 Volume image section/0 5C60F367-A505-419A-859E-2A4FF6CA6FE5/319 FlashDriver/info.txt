@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: FlashDriver
+Offset: 83EFB0h
+Full size: 6A5Eh (27230)
+Header size: 18h (24)
+Body size: 6A46h (27206)
+File GUID: CBC59C4A-383A-41EB-A8EE-4498AEA567E4
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 0Dh, valid
+Data checksum: AAh, valid

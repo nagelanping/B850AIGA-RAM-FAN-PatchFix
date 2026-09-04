@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: AmdUsb4Pei
+Offset: ADDF0h
+Full size: AA2h (2722)
+Header size: 18h (24)
+Body size: A8Ah (2698)
+File GUID: 617362EF-CAFF-47D4-A131-E95E4A345751
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 06h, valid
+Data checksum: AAh, valid

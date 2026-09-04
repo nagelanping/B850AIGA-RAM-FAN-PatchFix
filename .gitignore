@@ -1,0 +1,9 @@
+*.code-workspace
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# 临时分析工程（ghidra 等，体积大且可再生）
+tmp/ghidra_proj/

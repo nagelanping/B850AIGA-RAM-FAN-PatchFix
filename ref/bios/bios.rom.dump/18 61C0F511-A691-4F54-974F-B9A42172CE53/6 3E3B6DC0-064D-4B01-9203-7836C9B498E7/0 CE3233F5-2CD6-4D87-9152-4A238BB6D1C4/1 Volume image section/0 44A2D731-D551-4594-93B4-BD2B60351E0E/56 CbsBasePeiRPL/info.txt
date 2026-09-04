@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: CbsBasePeiRPL
+Offset: AE898h
+Full size: 75C2h (30146)
+Header size: 18h (24)
+Body size: 75AAh (30122)
+File GUID: 75BA309D-5DFD-49BF-ACE8-28B39B52BDF7
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 55h, valid
+Data checksum: AAh, valid

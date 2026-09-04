@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: ApobGnrPei
+Offset: 92148h
+Full size: 172Eh (5934)
+Header size: 18h (24)
+Body size: 1716h (5910)
+File GUID: 07393E37-7104-48D9-88F0-FB8A501E167B
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 6Eh, valid
+Data checksum: AAh, valid

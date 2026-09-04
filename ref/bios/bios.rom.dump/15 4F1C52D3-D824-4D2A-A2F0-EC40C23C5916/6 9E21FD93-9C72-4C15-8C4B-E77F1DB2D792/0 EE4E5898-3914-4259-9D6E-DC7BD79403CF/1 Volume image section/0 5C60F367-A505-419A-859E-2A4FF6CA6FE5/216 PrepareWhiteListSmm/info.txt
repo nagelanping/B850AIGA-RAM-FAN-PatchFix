@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: PrepareWhiteListSmm
+Offset: 66E998h
+Full size: 4692h (18066)
+Header size: 18h (24)
+Body size: 467Ah (18042)
+File GUID: 391626DB-3CEC-4339-A3D6-9CDFF4690E12
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: B9h, valid
+Data checksum: AAh, valid

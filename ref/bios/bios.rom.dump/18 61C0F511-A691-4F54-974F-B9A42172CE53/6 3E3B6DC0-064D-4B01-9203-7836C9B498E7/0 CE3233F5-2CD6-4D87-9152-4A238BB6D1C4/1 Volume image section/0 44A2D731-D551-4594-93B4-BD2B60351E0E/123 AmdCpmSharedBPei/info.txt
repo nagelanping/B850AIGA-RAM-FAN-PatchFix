@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: AmdCpmSharedBPei
+Offset: 1437F8h
+Full size: 524Eh (21070)
+Header size: 18h (24)
+Body size: 5236h (21046)
+File GUID: 92ABFB76-D724-4585-A513-EB5FF3EB1C5D
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 8Eh, valid
+Data checksum: AAh, valid

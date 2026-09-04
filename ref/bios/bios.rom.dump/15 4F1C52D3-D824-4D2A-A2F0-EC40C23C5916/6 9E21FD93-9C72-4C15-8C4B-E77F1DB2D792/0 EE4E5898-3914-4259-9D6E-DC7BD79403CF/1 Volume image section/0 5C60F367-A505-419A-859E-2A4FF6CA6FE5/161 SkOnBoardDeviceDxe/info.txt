@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: SkOnBoardDeviceDxe
+Offset: 53F8F8h
+Full size: 32A2h (12962)
+Header size: 18h (24)
+Body size: 328Ah (12938)
+File GUID: 1DACE8EE-CD97-491E-8A0C-305D6437323C
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 8Fh, valid
+Data checksum: AAh, valid

@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: FchProm21SmmInit
+Offset: 68E0D8h
+Full size: 24E6h (9446)
+Header size: 18h (24)
+Body size: 24CEh (9422)
+File GUID: 30A5E718-39CA-441C-BED3-F4A3A931458D
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: E1h, valid
+Data checksum: AAh, valid

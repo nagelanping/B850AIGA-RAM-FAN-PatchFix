@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: BaseBoardSmi
+Offset: 7BBE10h
+Full size: 26AAh (9898)
+Header size: 18h (24)
+Body size: 2692h (9874)
+File GUID: C0696C7B-5959-423F-9454-5B6A47E2356C
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: 6Ch, valid
+Data checksum: AAh, valid

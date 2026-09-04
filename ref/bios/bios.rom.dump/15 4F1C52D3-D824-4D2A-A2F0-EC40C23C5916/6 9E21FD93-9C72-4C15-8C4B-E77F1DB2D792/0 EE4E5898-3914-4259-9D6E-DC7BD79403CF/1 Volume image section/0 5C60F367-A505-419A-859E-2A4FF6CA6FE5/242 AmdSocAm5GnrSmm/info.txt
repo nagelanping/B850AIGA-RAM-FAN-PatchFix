@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: AmdSocAm5GnrSmm
+Offset: 6CE030h
+Full size: 209Ah (8346)
+Header size: 18h (24)
+Body size: 2082h (8322)
+File GUID: F69BA5A7-BC88-4C62-A277-1C30EDBB658C
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: 6Fh, valid
+Data checksum: AAh, valid

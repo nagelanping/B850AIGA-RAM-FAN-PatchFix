@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmdErrorLogDxe
+Offset: B4240h
+Full size: 1476h (5238)
+Header size: 18h (24)
+Body size: 145Eh (5214)
+File GUID: 8624F36D-6DE0-44C3-8322-74AD419D3A90
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: A3h, valid
+Data checksum: AAh, valid

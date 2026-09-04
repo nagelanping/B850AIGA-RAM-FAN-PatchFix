@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: SkPostMessagePei
+Offset: 187488h
+Full size: 2EAh (746)
+Header size: 18h (24)
+Body size: 2D2h (722)
+File GUID: 1A931FB8-C466-454A-B684-73ADA2CB050B
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: FAh, valid
+Data checksum: AAh, valid

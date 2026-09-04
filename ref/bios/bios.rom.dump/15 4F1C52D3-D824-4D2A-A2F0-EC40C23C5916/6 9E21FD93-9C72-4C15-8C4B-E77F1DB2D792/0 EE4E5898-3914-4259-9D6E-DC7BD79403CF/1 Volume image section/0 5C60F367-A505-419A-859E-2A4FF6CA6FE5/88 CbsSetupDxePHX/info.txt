@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: CbsSetupDxePHX
+Offset: 2298A8h
+Full size: 47EF6h (294646)
+Header size: 18h (24)
+Body size: 47EDEh (294622)
+File GUID: 95BA4462-7EF0-49A3-9702-6896C39E414C
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: ADh, valid
+Data checksum: AAh, valid

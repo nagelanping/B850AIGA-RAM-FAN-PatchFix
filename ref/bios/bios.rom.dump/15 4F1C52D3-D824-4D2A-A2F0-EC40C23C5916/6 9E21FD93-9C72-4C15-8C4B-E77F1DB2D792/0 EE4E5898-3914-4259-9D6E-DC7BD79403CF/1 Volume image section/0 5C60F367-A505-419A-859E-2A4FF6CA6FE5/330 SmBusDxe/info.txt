@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: SmBusDxe
+Offset: 8C6610h
+Full size: 2A6Ah (10858)
+Header size: 18h (24)
+Body size: 2A52h (10834)
+File GUID: BA28936B-4051-48CF-A5CD-B63D7BFCA84A
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 0Fh, valid
+Data checksum: AAh, valid

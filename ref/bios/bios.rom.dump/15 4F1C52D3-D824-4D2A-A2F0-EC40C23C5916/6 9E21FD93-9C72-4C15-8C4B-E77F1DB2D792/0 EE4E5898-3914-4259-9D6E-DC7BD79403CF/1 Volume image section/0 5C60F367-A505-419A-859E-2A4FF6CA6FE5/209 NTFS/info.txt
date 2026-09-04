@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: NTFS
+Offset: 60C6C8h
+Full size: 2ABFAh (175098)
+Header size: 18h (24)
+Body size: 2ABE2h (175074)
+File GUID: 04CC88FF-37CB-4D0A-B566-C3064BAE3F5E
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 28h, valid
+Data checksum: AAh, valid

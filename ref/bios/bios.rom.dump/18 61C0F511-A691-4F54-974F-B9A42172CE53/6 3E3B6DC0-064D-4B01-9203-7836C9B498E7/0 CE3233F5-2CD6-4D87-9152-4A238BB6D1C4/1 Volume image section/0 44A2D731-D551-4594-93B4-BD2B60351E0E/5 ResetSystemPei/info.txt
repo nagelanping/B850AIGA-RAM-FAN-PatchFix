@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: ResetSystemPei
+Offset: CBC8h
+Full size: FE6h (4070)
+Header size: 18h (24)
+Body size: FCEh (4046)
+File GUID: 6141E486-7543-4F1A-A579-FF532ED78E75
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 60h, valid
+Data checksum: AAh, valid

@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: AmdApcbSmmV3
+Offset: 6B4698h
+Full size: DCCEh (56526)
+Header size: 18h (24)
+Body size: DCB6h (56502)
+File GUID: B1BAC051-D5C2-4AC1-AC7D-9D2F518A1E7B
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: C5h, valid
+Data checksum: AAh, valid

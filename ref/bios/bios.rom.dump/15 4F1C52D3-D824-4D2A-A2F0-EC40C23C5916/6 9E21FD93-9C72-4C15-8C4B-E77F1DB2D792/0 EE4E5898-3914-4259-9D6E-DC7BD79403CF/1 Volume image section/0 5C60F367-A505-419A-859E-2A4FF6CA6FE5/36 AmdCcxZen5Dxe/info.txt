@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmdCcxZen5Dxe
+Offset: AB088h
+Full size: 91B2h (37298)
+Header size: 18h (24)
+Body size: 919Ah (37274)
+File GUID: 9FB8AC55-D266-4F86-AC43-BF2BA74F5A7A
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: AEh, valid
+Data checksum: AAh, valid

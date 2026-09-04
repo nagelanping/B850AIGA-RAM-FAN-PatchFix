@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmiTcgNvflagSample
+Offset: 78h
+Full size: 12A2h (4770)
+Header size: 18h (24)
+Body size: 128Ah (4746)
+File GUID: 50F6096D-7C98-4C78-9A1D-C5A1833B6A88
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: E4h, valid
+Data checksum: AAh, valid

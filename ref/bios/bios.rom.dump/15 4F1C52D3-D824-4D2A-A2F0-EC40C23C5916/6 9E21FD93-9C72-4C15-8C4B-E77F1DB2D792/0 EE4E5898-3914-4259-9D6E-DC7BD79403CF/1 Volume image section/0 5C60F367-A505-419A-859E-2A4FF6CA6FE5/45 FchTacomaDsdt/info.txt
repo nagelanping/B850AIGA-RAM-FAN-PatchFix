@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: FchTacomaDsdt
+Offset: DB2E0h
+Full size: EAAh (3754)
+Header size: 18h (24)
+Body size: E92h (3730)
+File GUID: 7172526E-F691-4B01-AE22-A19FCC35F651
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 73h, valid
+Data checksum: AAh, valid

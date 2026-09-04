@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: AmdSocAm5GnrPei
+Offset: 96D88h
+Full size: 83BAh (33722)
+Header size: 18h (24)
+Body size: 83A2h (33698)
+File GUID: F3FDA9D8-4EE5-44D8-8E49-AFAA77B5FC51
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 54h, valid
+Data checksum: AAh, valid

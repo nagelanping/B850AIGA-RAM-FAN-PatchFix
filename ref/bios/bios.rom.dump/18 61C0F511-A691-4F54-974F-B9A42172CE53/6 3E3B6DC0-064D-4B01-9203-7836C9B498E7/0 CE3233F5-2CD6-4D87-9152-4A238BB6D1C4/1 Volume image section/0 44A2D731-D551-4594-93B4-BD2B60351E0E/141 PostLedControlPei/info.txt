@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: PostLedControlPei
+Offset: 18F220h
+Full size: 4AAh (1194)
+Header size: 18h (24)
+Body size: 492h (1170)
+File GUID: 19F00F81-D020-457A-AEB2-BACB2064DC35
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 8Ah, valid
+Data checksum: AAh, valid

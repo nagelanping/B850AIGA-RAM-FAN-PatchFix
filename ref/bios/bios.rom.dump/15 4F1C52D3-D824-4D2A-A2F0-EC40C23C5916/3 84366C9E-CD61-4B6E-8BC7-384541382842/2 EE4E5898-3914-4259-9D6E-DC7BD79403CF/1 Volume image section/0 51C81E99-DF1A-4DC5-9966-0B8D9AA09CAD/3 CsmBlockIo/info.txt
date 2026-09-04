@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: CsmBlockIo
+Offset: 11258h
+Full size: 4536h (17718)
+Header size: 18h (24)
+Body size: 451Eh (17694)
+File GUID: 25ACF158-DD61-4E64-9A49-55851E9A26C7
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 12h, valid
+Data checksum: AAh, valid

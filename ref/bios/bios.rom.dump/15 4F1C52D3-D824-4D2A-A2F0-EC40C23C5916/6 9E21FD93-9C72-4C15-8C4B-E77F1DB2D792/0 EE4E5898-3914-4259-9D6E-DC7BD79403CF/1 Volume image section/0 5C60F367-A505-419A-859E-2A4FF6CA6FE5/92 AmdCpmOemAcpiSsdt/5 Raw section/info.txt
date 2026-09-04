@@ -1,0 +1,7 @@
+Type: Section
+Subtype: Raw
+Offset: BD78h
+Full size: 5296h (21142)
+Header size: 4h (4)
+Body size: 5292h (21138)
+Type: 19h

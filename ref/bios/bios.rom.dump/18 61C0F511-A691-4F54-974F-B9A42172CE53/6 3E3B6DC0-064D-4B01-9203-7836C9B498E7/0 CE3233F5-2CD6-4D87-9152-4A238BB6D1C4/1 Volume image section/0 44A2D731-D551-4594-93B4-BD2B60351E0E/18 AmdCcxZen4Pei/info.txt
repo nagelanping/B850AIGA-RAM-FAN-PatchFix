@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: AmdCcxZen4Pei
+Offset: 132E8h
+Full size: A6A2h (42658)
+Header size: 18h (24)
+Body size: A68Ah (42634)
+File GUID: 01CF676F-6F01-4FA3-9789-B6322D890394
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 55h, valid
+Data checksum: AAh, valid

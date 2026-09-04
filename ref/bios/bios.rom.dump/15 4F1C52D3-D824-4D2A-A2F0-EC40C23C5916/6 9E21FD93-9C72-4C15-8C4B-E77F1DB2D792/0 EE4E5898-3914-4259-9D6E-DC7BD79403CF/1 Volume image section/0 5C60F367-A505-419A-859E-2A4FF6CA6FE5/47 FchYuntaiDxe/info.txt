@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: FchYuntaiDxe
+Offset: DEA50h
+Full size: B0AAh (45226)
+Header size: 18h (24)
+Body size: B092h (45202)
+File GUID: 060644B6-6A7F-4A97-900C-49645DA956D7
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 53h, valid
+Data checksum: AAh, valid

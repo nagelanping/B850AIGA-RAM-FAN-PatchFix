@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmdSmmControl
+Offset: 58CF88h
+Full size: 2A96h (10902)
+Header size: 18h (24)
+Body size: 2A7Eh (10878)
+File GUID: EC76B3B4-6821-4D4B-A0AB-D28CC27AC439
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 6Dh, valid
+Data checksum: AAh, valid

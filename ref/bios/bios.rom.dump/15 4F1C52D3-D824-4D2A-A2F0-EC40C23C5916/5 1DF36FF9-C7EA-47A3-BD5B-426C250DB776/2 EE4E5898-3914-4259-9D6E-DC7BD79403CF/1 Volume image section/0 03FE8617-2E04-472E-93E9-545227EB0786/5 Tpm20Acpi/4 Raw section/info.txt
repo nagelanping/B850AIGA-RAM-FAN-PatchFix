@@ -1,0 +1,7 @@
+Type: Section
+Subtype: Raw
+Offset: 2AA4h
+Full size: BB2h (2994)
+Header size: 4h (4)
+Body size: BAEh (2990)
+Type: 19h

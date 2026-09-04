@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: GraphicsSplitter
+Offset: 5B22C8h
+Full size: 372Eh (14126)
+Header size: 18h (24)
+Body size: 3716h (14102)
+File GUID: 55987E62-1DF6-41D1-9062-334FCAC3E54D
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 6Fh, valid
+Data checksum: AAh, valid

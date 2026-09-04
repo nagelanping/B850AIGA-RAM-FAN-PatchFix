@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmdCpmDisplayFeatureDxe
+Offset: 364958h
+Full size: 188BEh (100542)
+Header size: 18h (24)
+Body size: 188A6h (100518)
+File GUID: 57E9EEE9-EB7D-4453-BBF7-6C138BF06458
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 34h, valid
+Data checksum: AAh, valid

@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: PostLedControlDxe
+Offset: 574618h
+Full size: 166Ah (5738)
+Header size: 18h (24)
+Body size: 1652h (5714)
+File GUID: 2BA68B61-A814-4B89-87D1-66FFC5ABD564
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: C6h, valid
+Data checksum: AAh, valid

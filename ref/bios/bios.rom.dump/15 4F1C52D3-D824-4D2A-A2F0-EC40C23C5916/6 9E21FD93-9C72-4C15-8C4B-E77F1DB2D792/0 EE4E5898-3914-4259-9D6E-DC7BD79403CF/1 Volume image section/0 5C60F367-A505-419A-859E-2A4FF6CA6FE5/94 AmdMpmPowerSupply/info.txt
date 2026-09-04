@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmdMpmPowerSupply
+Offset: 2E5E08h
+Full size: 1E8Eh (7822)
+Header size: 18h (24)
+Body size: 1E76h (7798)
+File GUID: 699190BD-6456-4286-823C-28E4442DFCAB
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: A2h, valid
+Data checksum: AAh, valid

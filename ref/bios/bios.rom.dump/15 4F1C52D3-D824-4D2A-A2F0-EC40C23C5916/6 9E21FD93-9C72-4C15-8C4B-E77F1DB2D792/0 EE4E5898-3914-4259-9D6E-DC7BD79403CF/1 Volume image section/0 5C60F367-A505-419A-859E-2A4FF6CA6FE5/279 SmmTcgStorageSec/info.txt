@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: SmmTcgStorageSec
+Offset: 7A2EC8h
+Full size: 58B2h (22706)
+Header size: 18h (24)
+Body size: 589Ah (22682)
+File GUID: 6B85F263-F584-44F8-BB5D-F02C40795D8E
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: 1Ah, valid
+Data checksum: AAh, valid

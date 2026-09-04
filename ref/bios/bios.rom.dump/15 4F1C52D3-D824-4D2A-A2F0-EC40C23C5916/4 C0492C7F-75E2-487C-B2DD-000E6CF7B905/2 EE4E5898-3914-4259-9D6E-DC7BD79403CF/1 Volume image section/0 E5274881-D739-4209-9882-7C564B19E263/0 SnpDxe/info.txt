@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: SnpDxe
+Offset: 78h
+Full size: 603Eh (24638)
+Header size: 18h (24)
+Body size: 6026h (24614)
+File GUID: A2F436EA-A127-4EF8-957C-8048606FF670
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 89h, valid
+Data checksum: AAh, valid

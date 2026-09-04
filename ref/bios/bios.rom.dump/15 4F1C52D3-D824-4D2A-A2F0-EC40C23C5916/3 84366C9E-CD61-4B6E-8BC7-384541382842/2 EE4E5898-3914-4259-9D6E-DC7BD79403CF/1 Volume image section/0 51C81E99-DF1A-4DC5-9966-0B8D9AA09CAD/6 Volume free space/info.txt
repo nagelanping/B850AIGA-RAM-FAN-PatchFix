@@ -1,0 +1,6 @@
+Type: Free space
+Subtype: 
+Offset: 1B780h
+Full size: 880h (2176)
+Body size: 880h (2176)
+

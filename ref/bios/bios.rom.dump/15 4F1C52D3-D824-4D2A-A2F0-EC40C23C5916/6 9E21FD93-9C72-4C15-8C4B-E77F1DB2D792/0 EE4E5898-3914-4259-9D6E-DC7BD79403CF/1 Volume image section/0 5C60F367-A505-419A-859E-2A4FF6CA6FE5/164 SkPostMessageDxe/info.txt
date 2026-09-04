@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: SkPostMessageDxe
+Offset: 5490A8h
+Full size: 1E6Ah (7786)
+Header size: 18h (24)
+Body size: 1E52h (7762)
+File GUID: 177B2C74-9674-45F4-AAEB-43F5506AE0FE
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 97h, valid
+Data checksum: AAh, valid

@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: SbSmi
+Offset: 67BF60h
+Full size: 109Ah (4250)
+Header size: 18h (24)
+Body size: 1082h (4226)
+File GUID: 0FD41E0B-C4DF-4B4B-863D-17C0DBD6EF56
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: 77h, valid
+Data checksum: AAh, valid

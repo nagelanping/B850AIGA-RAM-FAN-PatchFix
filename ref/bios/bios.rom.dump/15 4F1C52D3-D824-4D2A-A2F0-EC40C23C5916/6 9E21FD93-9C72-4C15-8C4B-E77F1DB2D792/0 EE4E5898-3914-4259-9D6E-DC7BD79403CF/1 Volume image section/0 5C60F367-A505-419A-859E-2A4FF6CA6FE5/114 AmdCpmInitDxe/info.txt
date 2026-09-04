@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmdCpmInitDxe
+Offset: 38D8C8h
+Full size: CC62h (52322)
+Header size: 18h (24)
+Body size: CC4Ah (52298)
+File GUID: 162793AA-0FE7-4010-9818-45F55C5CCC3E
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 5Fh, valid
+Data checksum: AAh, valid

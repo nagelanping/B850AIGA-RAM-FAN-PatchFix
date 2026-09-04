@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: Recovery
+Offset: 14E750h
+Full size: E71h (3697)
+Header size: 18h (24)
+Body size: E59h (3673)
+File GUID: DACF705C-71DF-497D-AABE-10186B2E1DDE
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: CCh, valid
+Data checksum: AAh, valid

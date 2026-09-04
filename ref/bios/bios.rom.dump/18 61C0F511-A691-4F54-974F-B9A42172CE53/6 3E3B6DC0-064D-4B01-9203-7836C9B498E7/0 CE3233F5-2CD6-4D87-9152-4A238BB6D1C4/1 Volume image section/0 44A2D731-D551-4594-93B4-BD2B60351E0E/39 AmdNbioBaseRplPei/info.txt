@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: AmdNbioBaseRplPei
+Offset: 59610h
+Full size: 473Eh (18238)
+Header size: 18h (24)
+Body size: 4726h (18214)
+File GUID: 55073147-BE8A-493D-8342-BDFC17E7F2BA
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: ABh, valid
+Data checksum: AAh, valid

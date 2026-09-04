@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM core
+Text: PiSmmCore
+Offset: 63F108h
+Full size: E442h (58434)
+Header size: 18h (24)
+Body size: E42Ah (58410)
+File GUID: E94F54CD-81EB-47ED-AEC3-856F5DC157A9
+Type: 0Dh
+Attributes: 00h
+State: F8h
+Header checksum: 51h, valid
+Data checksum: AAh, valid

@@ -1,0 +1,8 @@
+Type: Section
+Subtype: Freeform subtype GUID
+Offset: 18h
+Full size: 58110h (360720)
+Header size: 14h (20)
+Body size: 580FCh (360700)
+Type: 18h
+Subtype GUID: FE612B72-203C-47B1-8560-A66D946EB371

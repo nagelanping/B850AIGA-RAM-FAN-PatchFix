@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmdCpmMemEyeToolDxe
+Offset: 38C530h
+Full size: 1398h (5016)
+Header size: 18h (24)
+Body size: 1380h (4992)
+File GUID: 69110D87-9BB3-47FC-B412-22E4F135AE38
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: D7h, valid
+Data checksum: AAh, valid

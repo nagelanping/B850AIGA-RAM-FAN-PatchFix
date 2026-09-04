@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: AmdNbioEarlyPhaseRPLPei
+Offset: 53898h
+Full size: AC6h (2758)
+Header size: 18h (24)
+Body size: AAEh (2734)
+File GUID: C067DBFA-2C8B-4A7C-921B-28DCB25D9EDA
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 79h, valid
+Data checksum: AAh, valid

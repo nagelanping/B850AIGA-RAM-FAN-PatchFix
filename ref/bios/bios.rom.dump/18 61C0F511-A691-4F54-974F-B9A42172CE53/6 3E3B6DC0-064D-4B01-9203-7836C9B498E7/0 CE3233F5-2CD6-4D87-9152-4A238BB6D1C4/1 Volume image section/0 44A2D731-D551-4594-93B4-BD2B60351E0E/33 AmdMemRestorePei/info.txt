@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: AmdMemRestorePei
+Offset: 4F660h
+Full size: 9BAh (2490)
+Header size: 18h (24)
+Body size: 9A2h (2466)
+File GUID: 4B6E1294-08D2-4131-83E4-14BE9FCD42C1
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: E4h, valid
+Data checksum: AAh, valid

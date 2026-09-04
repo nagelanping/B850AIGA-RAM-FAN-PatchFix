@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: Udp6Dxe
+Offset: 1D6330h
+Full size: 763Eh (30270)
+Header size: 18h (24)
+Body size: 7626h (30246)
+File GUID: D912C7BC-F098-4367-92BA-E911083C7B0E
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 92h, valid
+Data checksum: AAh, valid

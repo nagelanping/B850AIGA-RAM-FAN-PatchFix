@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: FchProm21SsdtDxe
+Offset: CE190h
+Full size: 189Eh (6302)
+Header size: 18h (24)
+Body size: 1886h (6278)
+File GUID: 34891F9C-54DA-44EA-8313-CAB8AAB1BD0C
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 33h, valid
+Data checksum: AAh, valid

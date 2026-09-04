@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: CmosPei
+Offset: 152598h
+Full size: 1D46h (7494)
+Header size: 18h (24)
+Body size: 1D2Eh (7470)
+File GUID: 654FE61A-2EDA-4749-A76A-56ED7ADE1CBE
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: C5h, valid
+Data checksum: AAh, valid

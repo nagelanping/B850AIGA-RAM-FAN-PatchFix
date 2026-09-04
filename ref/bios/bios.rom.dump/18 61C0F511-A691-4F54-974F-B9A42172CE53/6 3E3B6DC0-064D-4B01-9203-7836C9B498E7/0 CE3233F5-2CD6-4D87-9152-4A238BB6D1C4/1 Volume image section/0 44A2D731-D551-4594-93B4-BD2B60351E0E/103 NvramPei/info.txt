@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: NvramPei
+Offset: 108E60h
+Full size: 223Ah (8762)
+Header size: 18h (24)
+Body size: 2222h (8738)
+File GUID: 838DCF34-907B-4D55-9A4B-A0EF7167B5F4
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: E9h, valid
+Data checksum: AAh, valid

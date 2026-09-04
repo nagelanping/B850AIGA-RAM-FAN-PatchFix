@@ -1,0 +1,6 @@
+Type: NVAR GUID store
+Subtype: 
+Offset: 3663h
+Full size: 10h (16)
+Body size: 10h (16)
+GUIDs in store: 1

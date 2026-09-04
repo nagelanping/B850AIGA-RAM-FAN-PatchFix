@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: HttpBootDxe
+Offset: 2FE20h
+Full size: F87Ah (63610)
+Header size: 18h (24)
+Body size: F862h (63586)
+File GUID: ECEBCB00-D9C8-11E4-AF3D-8CDCD426C973
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: C5h, valid
+Data checksum: AAh, valid

@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: FchYuntaiSmmInit
+Offset: 6A0AA0h
+Full size: 7352h (29522)
+Header size: 18h (24)
+Body size: 733Ah (29498)
+File GUID: 06BE9C49-717C-46C8-9848-E626B79FAA36
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: 6Bh, valid
+Data checksum: AAh, valid

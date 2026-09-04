@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmiHspFtpmAcpi
+Offset: 5348B0h
+Full size: 448Ah (17546)
+Header size: 18h (24)
+Body size: 4472h (17522)
+File GUID: 23B4BD04-198C-4A11-B65A-A52B33C98C18
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 13h, valid
+Data checksum: AAh, valid

@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmdMemFailSafeBootDxe
+Offset: EC0E8h
+Full size: 20A6h (8358)
+Header size: 18h (24)
+Body size: 208Eh (8334)
+File GUID: 49EE9942-FF9C-5CD5-6C61-2A015C10A524
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 28h, valid
+Data checksum: AAh, valid

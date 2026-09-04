@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: TcgPlatformSetupPeiPolicy
+Offset: E5820h
+Full size: 61Eh (1566)
+Header size: 18h (24)
+Body size: 606h (1542)
+File GUID: 0FE9DA53-043D-4265-A94D-FD77FEDE2EB4
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: A1h, valid
+Data checksum: AAh, valid

@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: UsbPei
+Offset: 114260h
+Full size: 45B1h (17841)
+Header size: 18h (24)
+Body size: 4599h (17817)
+File GUID: 39E8CA1A-7A69-4A73-834A-D06381933286
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 93h, valid
+Data checksum: AAh, valid

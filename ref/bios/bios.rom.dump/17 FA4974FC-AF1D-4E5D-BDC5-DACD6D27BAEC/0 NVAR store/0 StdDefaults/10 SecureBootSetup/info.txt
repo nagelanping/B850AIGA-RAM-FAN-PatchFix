@@ -1,0 +1,11 @@
+Type: NVAR entry
+Subtype: Full
+Text: SecureBootSetup
+Base: 1DC0357h
+Offset: 2C7h
+Full size: 22h (34)
+Header size: 1Bh (27)
+Body size: 7h (7)
+Variable GUID: 7B59104A-C00D-4158-87FF-F04D6396A915
+GUID index: 8
+Attributes: 82h (AsciiName, Valid)

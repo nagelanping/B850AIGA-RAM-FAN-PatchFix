@@ -1,0 +1,11 @@
+Type: NVAR entry
+Subtype: Full
+Text: PcieSataModVar
+Base: 1DC0285h
+Offset: 1F5h
+Full size: 1Dh (29)
+Header size: 1Ah (26)
+Body size: 3h (3)
+Variable GUID: 5E9A565F-CDC0-413B-AD13-1FE8713FFDCD
+GUID index: 3
+Attributes: 82h (AsciiName, Valid)

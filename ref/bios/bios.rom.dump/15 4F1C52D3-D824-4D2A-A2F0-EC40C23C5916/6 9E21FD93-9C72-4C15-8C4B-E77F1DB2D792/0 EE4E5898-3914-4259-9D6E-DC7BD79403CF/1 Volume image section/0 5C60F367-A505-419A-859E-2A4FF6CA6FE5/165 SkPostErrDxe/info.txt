@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: SkPostErrDxe
+Offset: 54AF18h
+Full size: 2872h (10354)
+Header size: 18h (24)
+Body size: 285Ah (10330)
+File GUID: 54AB7A17-AD08-4F86-83C2-4CF398EBC0AD
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: D1h, valid
+Data checksum: AAh, valid

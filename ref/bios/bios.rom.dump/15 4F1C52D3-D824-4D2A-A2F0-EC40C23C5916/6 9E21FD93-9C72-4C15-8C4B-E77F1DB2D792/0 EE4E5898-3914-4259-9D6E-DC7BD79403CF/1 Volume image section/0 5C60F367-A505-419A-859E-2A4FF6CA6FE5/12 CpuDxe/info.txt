@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: CpuDxe
+Offset: 5ED80h
+Full size: 46DAh (18138)
+Header size: 18h (24)
+Body size: 46C2h (18114)
+File GUID: E03ABADF-E536-4E88-B3A0-B77F78EB34FE
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 17h, valid
+Data checksum: AAh, valid

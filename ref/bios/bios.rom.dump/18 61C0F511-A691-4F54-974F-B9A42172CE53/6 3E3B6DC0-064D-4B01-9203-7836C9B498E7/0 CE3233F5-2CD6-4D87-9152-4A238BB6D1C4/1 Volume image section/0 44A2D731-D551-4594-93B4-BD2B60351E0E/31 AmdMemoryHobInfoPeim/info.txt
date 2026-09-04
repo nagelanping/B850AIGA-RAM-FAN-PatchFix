@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: AmdMemoryHobInfoPeim
+Offset: 4DBD0h
+Full size: D4Eh (3406)
+Header size: 18h (24)
+Body size: D36h (3382)
+File GUID: 7750576E-EBB3-454B-887C-6521B3CD34A5
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 02h, valid
+Data checksum: AAh, valid

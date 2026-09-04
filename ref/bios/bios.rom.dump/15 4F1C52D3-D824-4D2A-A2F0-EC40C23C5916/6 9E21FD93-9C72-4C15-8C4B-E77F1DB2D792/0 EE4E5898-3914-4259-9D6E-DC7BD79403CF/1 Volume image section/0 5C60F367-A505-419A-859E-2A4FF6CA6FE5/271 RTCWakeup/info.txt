@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: RTCWakeup
+Offset: 779518h
+Full size: 28A2h (10402)
+Header size: 18h (24)
+Body size: 288Ah (10378)
+File GUID: 9BFE0707-8174-4B8A-A5F5-556FB10E8843
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: D3h, valid
+Data checksum: AAh, valid

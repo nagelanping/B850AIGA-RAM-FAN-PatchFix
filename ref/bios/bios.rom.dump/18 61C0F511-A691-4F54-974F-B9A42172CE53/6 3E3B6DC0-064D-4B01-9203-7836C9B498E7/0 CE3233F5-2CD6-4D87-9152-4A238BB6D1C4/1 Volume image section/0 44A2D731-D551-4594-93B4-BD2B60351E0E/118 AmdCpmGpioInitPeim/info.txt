@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: AmdCpmGpioInitPeim
+Offset: 137CF0h
+Full size: 1F0Eh (7950)
+Header size: 18h (24)
+Body size: 1EF6h (7926)
+File GUID: DE3E049C-A218-4891-7469-4FC0AE853298
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 95h, valid
+Data checksum: AAh, valid

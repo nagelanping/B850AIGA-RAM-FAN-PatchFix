@@ -1,0 +1,7 @@
+Type: Section
+Subtype: Raw
+Offset: 18h
+Full size: 10F5Eh (69470)
+Header size: 4h (4)
+Body size: 10F5Ah (69466)
+Type: 19h

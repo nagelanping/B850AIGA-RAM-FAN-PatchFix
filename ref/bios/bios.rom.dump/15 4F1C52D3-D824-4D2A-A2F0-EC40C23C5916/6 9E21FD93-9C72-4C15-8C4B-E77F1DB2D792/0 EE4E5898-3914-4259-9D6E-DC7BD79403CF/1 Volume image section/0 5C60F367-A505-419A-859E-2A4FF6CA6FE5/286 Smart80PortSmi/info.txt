@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: Smart80PortSmi
+Offset: 7BAD60h
+Full size: 10AEh (4270)
+Header size: 18h (24)
+Body size: 1096h (4246)
+File GUID: 40A52300-6C40-CF74-C5A6-2159389732ED
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: 6Eh, valid
+Data checksum: AAh, valid

@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: SbSocPhoenixPei
+Offset: 12CE0h
+Full size: 606h (1542)
+Header size: 18h (24)
+Body size: 5EEh (1518)
+File GUID: 3DEC6443-30AA-44FD-979E-84B91D3C1412
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 12h, valid
+Data checksum: AAh, valid

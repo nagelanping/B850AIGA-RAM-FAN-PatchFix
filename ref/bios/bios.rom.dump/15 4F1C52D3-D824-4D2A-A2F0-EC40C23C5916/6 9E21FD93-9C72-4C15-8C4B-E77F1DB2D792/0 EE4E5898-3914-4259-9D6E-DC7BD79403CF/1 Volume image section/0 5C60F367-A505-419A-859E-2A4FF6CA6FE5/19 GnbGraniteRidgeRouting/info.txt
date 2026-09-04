@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: GnbGraniteRidgeRouting
+Offset: 71B60h
+Full size: 1C76h (7286)
+Header size: 18h (24)
+Body size: 1C5Eh (7262)
+File GUID: 58EE5E10-D0CF-4071-B1D7-980236E71E30
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: D6h, valid
+Data checksum: AAh, valid

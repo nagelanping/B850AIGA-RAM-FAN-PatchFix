@@ -1,0 +1,13 @@
+Type: File
+Subtype: Freeform
+Base: 1E003E8h
+Offset: 3E8h
+Full size: 6Dh (109)
+Header size: 18h (24)
+Body size: 55h (85)
+File GUID: DBAE6D74-4542-4579-B655-8735B776F992
+Type: 02h
+Attributes: 00h
+State: F8h
+Header checksum: 63h, valid
+Data checksum: AAh, valid

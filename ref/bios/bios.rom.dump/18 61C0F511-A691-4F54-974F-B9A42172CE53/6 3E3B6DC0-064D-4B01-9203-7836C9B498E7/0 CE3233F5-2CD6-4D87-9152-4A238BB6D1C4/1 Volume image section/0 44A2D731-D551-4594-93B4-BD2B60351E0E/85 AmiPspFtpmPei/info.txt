@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: AmiPspFtpmPei
+Offset: FB1A8h
+Full size: EA6h (3750)
+Header size: 18h (24)
+Body size: E8Eh (3726)
+File GUID: D4926BEA-00A3-40E5-A2B9-C317960F31BF
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: F9h, valid
+Data checksum: AAh, valid

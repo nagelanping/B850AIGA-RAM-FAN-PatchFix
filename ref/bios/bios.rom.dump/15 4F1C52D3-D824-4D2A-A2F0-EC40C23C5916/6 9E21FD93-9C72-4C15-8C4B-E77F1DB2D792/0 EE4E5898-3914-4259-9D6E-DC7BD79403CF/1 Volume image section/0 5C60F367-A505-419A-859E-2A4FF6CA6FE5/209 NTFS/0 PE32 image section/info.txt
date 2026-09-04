@@ -1,0 +1,17 @@
+Type: Section
+Subtype: PE32 image
+Offset: 18h
+Full size: 2ABC4h (175044)
+Header size: 4h (4)
+Body size: 2ABC0h (175040)
+Type: 10h
+DOS signature: 5A4Dh
+PE signature: 00004550h
+Machine type: x86-64
+Number of sections: 3
+Characteristics: 002Eh
+Optional header signature: 020Bh
+Subsystem: 000Bh
+Address of entry point: 1E000h
+Base of code: 240h
+Image base: 0h

@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: AmiPspFlashSmm
+Offset: 729098h
+Full size: 1276h (4726)
+Header size: 18h (24)
+Body size: 125Eh (4702)
+File GUID: 2216614E-CDBE-46E7-BA61-9BD2BC640393
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: 91h, valid
+Data checksum: AAh, valid

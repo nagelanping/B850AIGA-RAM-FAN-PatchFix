@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: FchTacomaDxe
+Offset: CFA30h
+Full size: B8AAh (47274)
+Header size: 18h (24)
+Body size: B892h (47250)
+File GUID: FD7A24E8-B7CC-4172-9F1E-64970BE3EF62
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: E7h, valid
+Data checksum: AAh, valid

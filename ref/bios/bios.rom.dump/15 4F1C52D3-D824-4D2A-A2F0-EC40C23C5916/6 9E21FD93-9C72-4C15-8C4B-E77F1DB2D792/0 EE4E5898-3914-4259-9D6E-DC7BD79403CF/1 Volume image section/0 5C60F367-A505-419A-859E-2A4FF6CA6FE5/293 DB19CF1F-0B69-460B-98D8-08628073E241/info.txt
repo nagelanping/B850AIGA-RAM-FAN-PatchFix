@@ -1,0 +1,12 @@
+Type: File
+Subtype: Freeform
+Offset: 7D78C8h
+Full size: 68h (104)
+Header size: 18h (24)
+Body size: 50h (80)
+File GUID: DB19CF1F-0B69-460B-98D8-08628073E241
+Type: 02h
+Attributes: 00h
+State: F8h
+Header checksum: FFh, valid
+Data checksum: AAh, valid

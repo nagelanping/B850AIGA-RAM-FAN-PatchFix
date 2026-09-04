@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: SbDxe
+Offset: 86078h
+Full size: 289Ah (10394)
+Header size: 18h (24)
+Body size: 2882h (10370)
+File GUID: B7D19491-E55A-470D-8508-85A5DFA41974
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 30h, valid
+Data checksum: AAh, valid

@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: SmBusPei
+Offset: 11A088h
+Full size: 13BEh (5054)
+Header size: 18h (24)
+Body size: 13A6h (5030)
+File GUID: 7AB0F90A-BDF8-4010-A434-4329FB61330D
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 17h, valid
+Data checksum: AAh, valid

@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: CapsuleX64
+Offset: 10B328h
+Full size: 42DEh (17118)
+Header size: 18h (24)
+Body size: 42C6h (17094)
+File GUID: F7FDE4A6-294C-493C-B50F-9734553BB757
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 35h, valid
+Data checksum: AAh, valid

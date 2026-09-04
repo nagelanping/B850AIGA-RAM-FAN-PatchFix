@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: PiSmmCommunicationSmm
+Offset: 7160D8h
+Full size: 1296h (4758)
+Header size: 18h (24)
+Body size: 127Eh (4734)
+File GUID: E21F35A8-42FF-4050-82D6-93F7CDFA7073
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: 13h, valid
+Data checksum: AAh, valid

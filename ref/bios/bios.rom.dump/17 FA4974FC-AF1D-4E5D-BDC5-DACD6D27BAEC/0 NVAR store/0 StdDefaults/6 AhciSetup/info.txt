@@ -1,0 +1,11 @@
+Type: NVAR entry
+Subtype: Full
+Text: AhciSetup
+Base: 1DC02BDh
+Offset: 22Dh
+Full size: 17h (23)
+Header size: 15h (21)
+Body size: 2h (2)
+Variable GUID: 73002C46-5129-4E67-8315-BFD9ECD68BB7
+GUID index: 5
+Attributes: 82h (AsciiName, Valid)

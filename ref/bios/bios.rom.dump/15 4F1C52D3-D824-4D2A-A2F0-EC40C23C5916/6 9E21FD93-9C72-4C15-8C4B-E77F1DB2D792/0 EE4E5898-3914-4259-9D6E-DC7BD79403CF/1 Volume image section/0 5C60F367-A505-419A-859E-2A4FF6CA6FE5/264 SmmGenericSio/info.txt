@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: SmmGenericSio
+Offset: 73E6D0h
+Full size: 4096h (16534)
+Header size: 18h (24)
+Body size: 407Eh (16510)
+File GUID: 2486829B-D3F3-47EC-827A-FC104907FC5C
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: B0h, valid
+Data checksum: AAh, valid

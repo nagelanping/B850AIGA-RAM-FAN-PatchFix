@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmdMpmSensor
+Offset: 2E7C98h
+Full size: 275Eh (10078)
+Header size: 18h (24)
+Body size: 2746h (10054)
+File GUID: A6442A85-7E2A-4A4F-B26B-98E1E64C221F
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 91h, valid
+Data checksum: AAh, valid

@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: OemPei
+Offset: 103960h
+Full size: 746h (1862)
+Header size: 18h (24)
+Body size: 72Eh (1838)
+File GUID: D9A865BB-D741-4B9B-9216-42870353A51E
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 84h, valid
+Data checksum: AAh, valid

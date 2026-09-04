@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: EnglishDxe
+Offset: 31B50h
+Full size: 1646h (5702)
+Header size: 18h (24)
+Body size: 162Eh (5678)
+File GUID: CD3BAFB6-50FB-4FE8-8E4E-AB74D2C1A600
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 7Ah, valid
+Data checksum: AAh, valid

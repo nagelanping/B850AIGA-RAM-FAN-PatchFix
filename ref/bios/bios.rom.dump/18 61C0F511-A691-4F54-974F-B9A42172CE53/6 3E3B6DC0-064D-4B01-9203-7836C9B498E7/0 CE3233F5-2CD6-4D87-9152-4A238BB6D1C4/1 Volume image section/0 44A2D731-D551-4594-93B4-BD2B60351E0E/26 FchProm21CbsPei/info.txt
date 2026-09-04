@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: FchProm21CbsPei
+Offset: 3BDE8h
+Full size: 449Ah (17562)
+Header size: 18h (24)
+Body size: 4482h (17538)
+File GUID: 58014AAF-1C4A-4868-9042-58BCD1637054
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: D6h, valid
+Data checksum: AAh, valid

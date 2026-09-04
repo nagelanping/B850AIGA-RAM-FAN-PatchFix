@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: FchProm21Dxe
+Offset: C9AA8h
+Full size: 2E62h (11874)
+Header size: 18h (24)
+Body size: 2E4Ah (11850)
+File GUID: D432C4A5-D473-4067-9CF7-02CE92A3CBFD
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: ACh, valid
+Data checksum: AAh, valid

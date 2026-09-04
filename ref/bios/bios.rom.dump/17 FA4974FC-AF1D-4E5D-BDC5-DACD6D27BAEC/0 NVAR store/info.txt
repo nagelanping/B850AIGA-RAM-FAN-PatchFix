@@ -1,0 +1,14 @@
+Type: File
+Subtype: Raw
+Text: NVAR store
+Base: 1DC0078h
+Offset: 78h
+Full size: 3FF88h (262024)
+Header size: 18h (24)
+Body size: 3FF70h (262000)
+File GUID: CEF5B9A3-476D-497F-9FDC-E98143E0422C
+Type: 01h
+Attributes: 00h
+State: F8h
+Header checksum: 64h, valid
+Data checksum: AAh, valid

@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmdCpmOemAcpiSsdt
+Offset: 2D2DB0h
+Full size: 1100Eh (69646)
+Header size: 18h (24)
+Body size: 10FF6h (69622)
+File GUID: 468E7B03-0922-4BB5-9FBB-EF15C071F056
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 88h, valid
+Data checksum: AAh, valid

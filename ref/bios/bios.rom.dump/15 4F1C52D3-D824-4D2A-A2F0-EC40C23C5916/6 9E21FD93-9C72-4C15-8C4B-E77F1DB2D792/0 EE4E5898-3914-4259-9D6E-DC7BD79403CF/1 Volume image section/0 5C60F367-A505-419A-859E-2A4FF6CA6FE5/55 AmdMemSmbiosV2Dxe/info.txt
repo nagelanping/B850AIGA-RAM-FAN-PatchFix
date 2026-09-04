@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmdMemSmbiosV2Dxe
+Offset: F2980h
+Full size: 167Ah (5754)
+Header size: 18h (24)
+Body size: 1662h (5730)
+File GUID: EA7BF2CC-F154-4CC4-A725-6382C701FBFE
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 7Fh, valid
+Data checksum: AAh, valid

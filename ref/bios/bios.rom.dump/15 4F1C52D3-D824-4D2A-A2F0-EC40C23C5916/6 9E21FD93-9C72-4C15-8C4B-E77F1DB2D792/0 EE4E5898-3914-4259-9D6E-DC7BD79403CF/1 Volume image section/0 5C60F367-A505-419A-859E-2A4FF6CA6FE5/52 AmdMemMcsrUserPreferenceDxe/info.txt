@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmdMemMcsrUserPreferenceDxe
+Offset: EE190h
+Full size: 1CC6h (7366)
+Header size: 18h (24)
+Body size: 1CAEh (7342)
+File GUID: 3FE065CB-D837-35BA-B91B-B1AAA971C8EE
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: CBh, valid
+Data checksum: AAh, valid

@@ -1,0 +1,12 @@
+Type: Section
+Subtype: GUID defined
+Base: 1E01FE8h
+Offset: 18h
+Full size: B3C5Ch (736348)
+Header size: 118h (280)
+Body size: B3B44h (736068)
+Section GUID: CE3233F5-2CD6-4D87-9152-4A238BB6D1C4
+Type: 02h
+Attributes: 0001h
+Compression algorithm: Zlib
+Decompressed size: 500020h (5242912)

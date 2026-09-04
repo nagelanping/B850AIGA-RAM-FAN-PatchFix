@@ -1,0 +1,13 @@
+Type: File
+Subtype: Volume image
+Base: 102C420h
+Offset: 2C420h
+Full size: B1AD9h (727769)
+Header size: 18h (24)
+Body size: B1AC1h (727745)
+File GUID: C0492C7F-75E2-487C-B2DD-000E6CF7B905
+Type: 0Bh
+Attributes: 00h
+State: F8h
+Header checksum: 6Ah, valid
+Data checksum: AAh, valid

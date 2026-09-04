@@ -1,0 +1,10 @@
+Type: NVAR entry
+Subtype: Full
+Text: VARSTORE_SKOC_SETTINGS_NAME
+Offset: 307h
+Full size: 203Bh (8251)
+Header size: 27h (39)
+Body size: 2014h (8212)
+Variable GUID: A3A3B874-7636-4182-BA1E-F52C584494E3
+GUID index: 10
+Attributes: 82h (AsciiName, Valid)

@@ -1,0 +1,74 @@
+== 芯片 ID (通道码0): 0x20/0x21 = 0xff 0xff (NCT6796D 预期 0xD6 0x80/0x90)
+== 试探标准解锁(0x87,0x87)后读 ID: 0x20/0x21 = 0xff 0xff
+== 标准解锁后 chip id: 0x20/0x21 = 0xff 0xff (NCT6796D 预期 0xD6 0x80/0x90)
+
+== 块1(UI:CPU?)  (选择码 0x02)
+   00: 10 32 45 01 03 01 01 3c 00 65 00 65 00 ff ff ff
+   10: ff 28 32 3c 46 ff ff 8c aa c8 e6 3c 00 02 02 00
+   20: ff 00 28 46 50 ff ff 19 4c 99 cc ff ff ff ff ff
+   30: ff 00 ff ff 00 64 01 ff 00 01 00 00 00 00 00 00
+   40: ff ff ff ff ff 00 00 ff ff ff ff ff ff ff 82 ff
+   50: ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+   60: ff ff ff ff ff ff 11 00 00 65 ff ff ff ff ff ff
+   70: ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+
+== 块2(UI:Sys1?)  (选择码 0x01)
+   00: 01 00 45 01 03 01 01 3c 00 5f ff 5f 00 ff ff ff
+   10: ff 19 23 2d 37 ff ff 8c aa c8 e6 32 00 01 01 00
+   20: ff 00 32 46 5a ff ff 4c 66 99 e5 ff ff ff ff ff
+   30: ff 00 ff ff 00 64 01 ff 00 ff ff ff ff ff ff 00
+   40: ff ff ff ff ff 00 00 ff ff ff ff ff ff ff 81 ff
+   50: 21 80 00 4b 00 50 00 ff ff ff ff ff ff ff ff ff
+   60: ff ff ff ff ff ff 11 00 00 5f ff ff ff ff ff ff
+   70: ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+
+== 块3(UI:Sys2?)  (选择码 0x03)
+   00: 01 00 45 01 03 01 01 3c 00 48 ff 48 00 ff ff ff
+   10: ff 19 23 2d 37 ff ff 8c aa c8 e6 3c 00 03 03 00
+   20: ff 00 3c 50 5a ff ff 19 66 b2 e5 ff ff ff ff ff
+   30: ff 00 ff ff 00 64 01 ff 00 ff ff ff ff ff ff 00
+   40: ff ff ff ff ff 00 00 ff ff ff ff ff ff ff 83 ff
+   50: ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+   60: ff ff ff ff ff ff 11 00 00 48 ff ff ff ff ff ff
+   70: ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+
+== 块4(UI:Sys3?)  (选择码 0x08)
+   00: 01 00 45 01 03 01 01 3c 00 48 ff 48 00 ff ff ff
+   10: ff 19 23 2d 37 ff ff 8c aa c8 e6 3c 00 03 03 00
+   20: ff 00 3c 50 5a ff ff 19 66 b2 e5 ff ff ff ff ff
+   30: ff 00 ff ff 00 64 01 ff 00 ff ff ff ff ff ff 00
+   40: ff ff ff ff ff ff ff ff ff ff ff ff ff ff 88 ff
+   50: ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+   60: ff ff ff ff ff ff 11 00 00 48 ff ff ff ff ff ff
+   70: ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+
+== 块5(UI:内存?)  (选择码 0x09)
+   00: 0a 00 45 01 03 01 01 3c 00 37 ff 37 00 ff ff ff
+   10: ff 19 23 2d 37 ff ff 8c aa c8 e6 3c 00 03 03 00
+   20: ff 00 1e 32 3c ff ff 33 4c 7f b2 ff ff ff ff ff
+   30: ff 00 ff ff 00 50 01 ff 00 ff ff ff ff ff ff 00
+   40: ff ff ff ff ff ff ff ff ff ff ff ff ff ff 89 ff
+   50: ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+   60: ff ff ff ff ff ff 11 00 00 37 ff ff ff ff ff ff
+   70: ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+
+== 块6(UI:水泵?)  (选择码 0x0b)
+   00: 10 00 45 01 03 01 01 3c 00 43 ff 43 00 ff ff ff
+   10: ff 19 23 2d 37 ff ff 8c aa c8 e6 3c 00 03 03 00
+   20: ff 00 3c 50 5a ff ff 19 4c 7f b2 ff ff ff ff ff
+   30: ff 00 ff ff 00 64 01 ff 00 ff ff ff ff ff ff 00
+   40: ff ff ff ff ff ff ff ff ff ff ff ff ff ff 8b ff
+   50: ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+   60: ff ff ff ff ff ff 11 00 00 43 ff ff ff ff ff ff
+   70: ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+
+== 关键寄存器汇总 ===
+reg  00(源?) 03 04 05 08 09 21 22 23 24 25 27 28 29 2A 2B 2C 35 61 62 63 64 65 66
+块1   10 01 03 01 00 65 00 28 46 50 ff 19 4c 99 cc ff ff 64 ff ff ff ff ff 11
+块2   01 01 03 01 00 5f 00 32 46 5a ff 4c 66 99 e5 ff ff 64 ff ff ff ff ff 11
+块3   01 01 03 01 00 48 00 3c 50 5a ff 19 66 b2 e5 ff ff 64 ff ff ff ff ff 11
+块4   01 01 03 01 00 48 00 3c 50 5a ff 19 66 b2 e5 ff ff 64 ff ff ff ff ff 11
+块5   0a 01 03 01 00 37 00 1e 32 3c ff 33 4c 7f b2 ff ff 50 ff ff ff ff ff 11
+块6   10 01 03 01 00 43 00 3c 50 5a ff 19 4c 7f b2 ff ff 64 ff ff ff ff ff 11
+
+[完成] 只读探测结束。请把完整输出贴给分析者。

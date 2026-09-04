@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: SmbiosPeim
+Offset: 180AA8h
+Full size: 607h (1543)
+Header size: 18h (24)
+Body size: 5EFh (1519)
+File GUID: 968C1D9F-80C4-43B7-8CAE-668AA56C4E71
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: D7h, valid
+Data checksum: AAh, valid

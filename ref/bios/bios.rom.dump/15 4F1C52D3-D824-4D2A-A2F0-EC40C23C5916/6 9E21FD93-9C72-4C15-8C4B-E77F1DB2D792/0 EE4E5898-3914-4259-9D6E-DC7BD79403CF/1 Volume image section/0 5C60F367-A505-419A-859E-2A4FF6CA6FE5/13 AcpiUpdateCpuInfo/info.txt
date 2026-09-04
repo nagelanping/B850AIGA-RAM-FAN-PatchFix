@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AcpiUpdateCpuInfo
+Offset: 63460h
+Full size: 127Ah (4730)
+Header size: 18h (24)
+Body size: 1262h (4706)
+File GUID: 2785ED8A-795F-43A1-AE2D-6BFFECCBA646
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: A6h, valid
+Data checksum: AAh, valid

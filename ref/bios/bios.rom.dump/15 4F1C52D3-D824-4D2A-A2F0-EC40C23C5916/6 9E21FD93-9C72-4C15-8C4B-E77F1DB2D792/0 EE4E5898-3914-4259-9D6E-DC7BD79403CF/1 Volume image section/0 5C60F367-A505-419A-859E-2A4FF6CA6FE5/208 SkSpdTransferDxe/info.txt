@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: SkSpdTransferDxe
+Offset: 5FA648h
+Full size: 1207Ah (73850)
+Header size: 18h (24)
+Body size: 12062h (73826)
+File GUID: 7A54B36F-F745-462C-B11F-16E03E52B617
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 9Dh, valid
+Data checksum: AAh, valid

@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: Smart80PortDxe
+Offset: 575C88h
+Full size: C66h (3174)
+Header size: 18h (24)
+Body size: C4Eh (3150)
+File GUID: D5270D5E-D6B2-ABF2-9B5D-9C97E564F4BC
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: D7h, valid
+Data checksum: AAh, valid

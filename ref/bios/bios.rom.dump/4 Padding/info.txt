@@ -1,0 +1,7 @@
+Type: Padding
+Subtype: Empty (FFh)
+Base: 3DC0C0h
+Offset: 3DC0C0h
+Full size: 40h (64)
+Body size: 40h (64)
+

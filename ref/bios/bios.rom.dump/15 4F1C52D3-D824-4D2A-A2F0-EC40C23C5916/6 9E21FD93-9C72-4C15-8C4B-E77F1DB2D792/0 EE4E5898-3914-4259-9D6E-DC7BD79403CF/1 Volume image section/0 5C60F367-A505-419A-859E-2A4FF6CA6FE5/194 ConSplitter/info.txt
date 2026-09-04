@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: ConSplitter
+Offset: 5A5E70h
+Full size: 7522h (29986)
+Header size: 18h (24)
+Body size: 750Ah (29962)
+File GUID: 628A497D-2BF6-4264-8741-069DBD3399D6
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 1Fh, valid
+Data checksum: AAh, valid

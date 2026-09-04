@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: FirmwarePerformancePei
+Offset: D5F30h
+Full size: B4Ah (2890)
+Header size: 18h (24)
+Body size: B32h (2866)
+File GUID: ADF01BF6-47D6-495D-B95B-687777807214
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: C4h, valid
+Data checksum: AAh, valid

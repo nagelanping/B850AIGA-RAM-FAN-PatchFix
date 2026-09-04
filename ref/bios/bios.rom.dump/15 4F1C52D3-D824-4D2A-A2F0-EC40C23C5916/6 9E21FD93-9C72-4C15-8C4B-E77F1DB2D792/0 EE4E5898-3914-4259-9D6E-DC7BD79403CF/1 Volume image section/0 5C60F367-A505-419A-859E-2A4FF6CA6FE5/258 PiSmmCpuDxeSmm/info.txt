@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: PiSmmCpuDxeSmm
+Offset: 717370h
+Full size: 10A8Ah (68234)
+Header size: 18h (24)
+Body size: 10A72h (68210)
+File GUID: A3FF0EF5-0C28-42F5-B544-8C7DE1E80014
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: 72h, valid
+Data checksum: AAh, valid

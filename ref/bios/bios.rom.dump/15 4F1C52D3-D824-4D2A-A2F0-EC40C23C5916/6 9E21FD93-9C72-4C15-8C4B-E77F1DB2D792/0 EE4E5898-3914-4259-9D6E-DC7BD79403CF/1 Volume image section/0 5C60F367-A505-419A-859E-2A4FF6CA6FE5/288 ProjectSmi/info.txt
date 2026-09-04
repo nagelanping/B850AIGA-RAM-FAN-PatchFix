@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: ProjectSmi
+Offset: 7BE4C0h
+Full size: 10A6h (4262)
+Header size: 18h (24)
+Body size: 108Eh (4238)
+File GUID: CE1FD2EA-F80C-4517-8A75-9F7794A1401E
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: 8Fh, valid
+Data checksum: AAh, valid

@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: CbsSetupDxeRPL
+Offset: 1E5F48h
+Full size: 406F6h (263926)
+Header size: 18h (24)
+Body size: 406DEh (263902)
+File GUID: 2848A12F-3F86-47C7-81D8-D3FD47B205B2
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 0Dh, valid
+Data checksum: AAh, valid

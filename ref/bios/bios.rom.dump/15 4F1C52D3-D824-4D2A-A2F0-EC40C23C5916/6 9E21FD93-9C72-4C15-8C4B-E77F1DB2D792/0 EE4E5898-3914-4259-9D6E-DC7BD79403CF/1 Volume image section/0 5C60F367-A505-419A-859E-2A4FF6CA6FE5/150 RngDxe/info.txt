@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: RngDxe
+Offset: 51A388h
+Full size: 1A56h (6742)
+Header size: 18h (24)
+Body size: 1A3Eh (6718)
+File GUID: B981A835-6EE8-4F4C-AE0B-210AA0BFBF01
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 7Eh, valid
+Data checksum: AAh, valid

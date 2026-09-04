@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmdPbsSetupDxe
+Offset: 272610h
+Full size: 5A4E2h (369890)
+Header size: 18h (24)
+Body size: 5A4CAh (369866)
+File GUID: BBB77CB9-762D-436C-AC40-8EE4901C3446
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: F1h, valid
+Data checksum: AAh, valid

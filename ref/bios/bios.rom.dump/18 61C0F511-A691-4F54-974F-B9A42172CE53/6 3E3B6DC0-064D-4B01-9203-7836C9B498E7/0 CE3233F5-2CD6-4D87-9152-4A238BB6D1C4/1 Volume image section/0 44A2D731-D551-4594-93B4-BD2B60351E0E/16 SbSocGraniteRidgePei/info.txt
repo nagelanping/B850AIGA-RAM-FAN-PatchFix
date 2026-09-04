@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: SbSocGraniteRidgePei
+Offset: 126C8h
+Full size: 612h (1554)
+Header size: 18h (24)
+Body size: 5FAh (1530)
+File GUID: 3DEC6443-30AA-44FD-979E-84B91D3CEE30
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 0Eh, valid
+Data checksum: AAh, valid

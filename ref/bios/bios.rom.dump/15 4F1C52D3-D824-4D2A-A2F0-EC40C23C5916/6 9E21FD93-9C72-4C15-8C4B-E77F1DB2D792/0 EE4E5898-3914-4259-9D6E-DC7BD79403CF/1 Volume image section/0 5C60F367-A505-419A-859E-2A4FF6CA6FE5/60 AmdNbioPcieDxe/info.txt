@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmdNbioPcieDxe
+Offset: 10FAB8h
+Full size: AEAEh (44718)
+Header size: 18h (24)
+Body size: AE96h (44694)
+File GUID: 907303D5-394D-4E7C-A430-7B6A764BDC3C
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: E0h, valid
+Data checksum: AAh, valid

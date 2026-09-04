@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: SkOcDxe
+Offset: 551068h
+Full size: B07Ah (45178)
+Header size: 18h (24)
+Body size: B062h (45154)
+File GUID: EBF32B81-B631-4271-BC69-E22AE2B3707C
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: F9h, valid
+Data checksum: AAh, valid

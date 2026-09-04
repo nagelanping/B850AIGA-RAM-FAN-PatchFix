@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: AmdHspConfigPei
+Offset: 7EB00h
+Full size: 2AF6h (10998)
+Header size: 18h (24)
+Body size: 2ADEh (10974)
+File GUID: A2627D18-010B-45B8-AD38-AB01691FC850
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 07h, valid
+Data checksum: AAh, valid

@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: AmdFabricRplPei
+Offset: 2A458h
+Full size: 28AEh (10414)
+Header size: 18h (24)
+Body size: 2896h (10390)
+File GUID: EC3A9E6F-9691-4D84-B00D-3E55472807EA
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 49h, valid
+Data checksum: AAh, valid

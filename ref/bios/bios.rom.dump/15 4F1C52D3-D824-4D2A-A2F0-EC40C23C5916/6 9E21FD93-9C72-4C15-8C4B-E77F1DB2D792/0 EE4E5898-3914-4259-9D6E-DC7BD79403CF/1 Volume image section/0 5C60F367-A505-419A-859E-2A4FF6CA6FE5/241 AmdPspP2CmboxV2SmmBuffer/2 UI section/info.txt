@@ -1,0 +1,8 @@
+Type: Section
+Subtype: UI
+Offset: 2268h
+Full size: 36h (54)
+Header size: 4h (4)
+Body size: 32h (50)
+Type: 15h
+Text: AmdPspP2CmboxV2SmmBuffer

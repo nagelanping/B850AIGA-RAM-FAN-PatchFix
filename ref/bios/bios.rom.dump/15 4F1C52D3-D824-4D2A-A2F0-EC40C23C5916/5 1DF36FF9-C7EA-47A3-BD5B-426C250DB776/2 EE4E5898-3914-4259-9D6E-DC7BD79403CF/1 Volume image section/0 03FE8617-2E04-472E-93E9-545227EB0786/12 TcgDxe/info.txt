@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: TcgDxe
+Offset: 2B770h
+Full size: 6A8Ah (27274)
+Header size: 18h (24)
+Body size: 6A72h (27250)
+File GUID: 5E9CABA3-F2B1-497A-ADAC-24F575E9CDE9
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: D1h, valid
+Data checksum: AAh, valid

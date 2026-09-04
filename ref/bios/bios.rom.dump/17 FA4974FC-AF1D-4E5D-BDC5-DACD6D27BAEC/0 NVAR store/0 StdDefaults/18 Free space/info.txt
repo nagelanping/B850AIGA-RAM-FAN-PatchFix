@@ -1,0 +1,7 @@
+Type: Free space
+Subtype: 
+Base: 1DC35DFh
+Offset: 354Fh
+Full size: 10h (16)
+Body size: 10h (16)
+

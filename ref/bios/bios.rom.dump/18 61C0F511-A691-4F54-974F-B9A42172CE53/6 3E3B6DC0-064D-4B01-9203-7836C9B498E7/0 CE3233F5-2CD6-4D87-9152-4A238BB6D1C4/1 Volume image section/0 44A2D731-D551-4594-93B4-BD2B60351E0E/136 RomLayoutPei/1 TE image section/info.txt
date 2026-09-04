@@ -1,0 +1,16 @@
+Type: Section
+Subtype: TE image
+Offset: 40h
+Full size: 3F04h (16132)
+Header size: 4h (4)
+Body size: 3F00h (16128)
+Type: 12h
+Signature: 5A56h
+Machine type: x86
+Number of sections: 3
+Subsystem: 0Bh
+Stripped size: 1A8h (424)
+Base of code: 220h
+Address of entry point: 385h
+Image base: 9C833D4h
+Adjusted image base: 9C83554h

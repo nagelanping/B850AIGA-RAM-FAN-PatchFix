@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: HddSecurityPei
+Offset: 1542E0h
+Full size: 683h (1667)
+Header size: 18h (24)
+Body size: 66Bh (1643)
+File GUID: D9DDCFF2-215A-480A-AA63-1DF1F5EDBC01
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 73h, valid
+Data checksum: AAh, valid

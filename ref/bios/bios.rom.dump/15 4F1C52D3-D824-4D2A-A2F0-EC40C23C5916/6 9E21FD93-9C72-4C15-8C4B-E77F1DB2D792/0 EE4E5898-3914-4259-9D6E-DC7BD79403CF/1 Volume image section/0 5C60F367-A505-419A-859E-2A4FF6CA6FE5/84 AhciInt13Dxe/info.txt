@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AhciInt13Dxe
+Offset: 1E1E68h
+Full size: 1072h (4210)
+Header size: 18h (24)
+Body size: 105Ah (4186)
+File GUID: 4DF53F89-D421-4F9D-8392-BE3BECC6288E
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 16h, valid
+Data checksum: AAh, valid

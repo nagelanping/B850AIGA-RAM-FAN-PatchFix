@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: Ahci
+Offset: 5BC290h
+Full size: 8E52h (36434)
+Header size: 18h (24)
+Body size: 8E3Ah (36410)
+File GUID: 8F5A2E02-538C-4D59-B920-C4786ACBC552
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 1Ah, valid
+Data checksum: AAh, valid

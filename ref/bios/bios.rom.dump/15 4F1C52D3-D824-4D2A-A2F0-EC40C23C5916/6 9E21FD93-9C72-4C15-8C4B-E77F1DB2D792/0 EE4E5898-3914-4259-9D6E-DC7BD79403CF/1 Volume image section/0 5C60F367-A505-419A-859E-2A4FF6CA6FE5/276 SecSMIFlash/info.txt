@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: SecSMIFlash
+Offset: 787620h
+Full size: BCFEh (48382)
+Header size: 18h (24)
+Body size: BCE6h (48358)
+File GUID: 3370A4BD-8C23-4565-A2A2-065FEEDE6080
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: 8Ah, valid
+Data checksum: AAh, valid

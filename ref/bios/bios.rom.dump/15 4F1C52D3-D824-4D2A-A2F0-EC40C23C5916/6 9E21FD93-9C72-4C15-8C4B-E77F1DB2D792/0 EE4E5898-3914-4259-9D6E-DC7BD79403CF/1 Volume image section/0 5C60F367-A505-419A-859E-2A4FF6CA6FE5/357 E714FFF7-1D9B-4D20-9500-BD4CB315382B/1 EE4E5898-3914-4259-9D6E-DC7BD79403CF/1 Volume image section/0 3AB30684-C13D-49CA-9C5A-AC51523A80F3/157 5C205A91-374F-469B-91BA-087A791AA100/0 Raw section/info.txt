@@ -1,0 +1,7 @@
+Type: Section
+Subtype: Raw
+Offset: 18h
+Full size: 7A0h (1952)
+Header size: 4h (4)
+Body size: 79Ch (1948)
+Type: 19h

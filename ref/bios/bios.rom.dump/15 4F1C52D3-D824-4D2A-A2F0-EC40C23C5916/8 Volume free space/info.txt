@@ -1,0 +1,7 @@
+Type: Free space
+Subtype: 
+Base: 16DDB10h
+Offset: 6DDB10h
+Full size: 6924F0h (6890736)
+Body size: 6924F0h (6890736)
+

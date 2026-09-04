@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: SkFlash
+Offset: 56A2A0h
+Full size: 709Eh (28830)
+Header size: 18h (24)
+Body size: 7086h (28806)
+File GUID: E218F8C1-0517-4D90-9A60-3B796EA0FA4C
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 3Dh, valid
+Data checksum: AAh, valid

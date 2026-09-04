@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: SkSmartFanCtrlPei
+Offset: 102BA0h
+Full size: DBAh (3514)
+Header size: 18h (24)
+Body size: DA2h (3490)
+File GUID: 54615123-39EE-49EA-8FFD-9F2E358A400B
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 4Dh, valid
+Data checksum: AAh, valid

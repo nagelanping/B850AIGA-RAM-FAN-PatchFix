@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: RuntimeDxe
+Offset: 57C0B8h
+Full size: 1C5Eh (7262)
+Header size: 18h (24)
+Body size: 1C46h (7238)
+File GUID: B601F8C4-43B7-4784-95B1-F4226CB40CEE
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: D1h, valid
+Data checksum: AAh, valid

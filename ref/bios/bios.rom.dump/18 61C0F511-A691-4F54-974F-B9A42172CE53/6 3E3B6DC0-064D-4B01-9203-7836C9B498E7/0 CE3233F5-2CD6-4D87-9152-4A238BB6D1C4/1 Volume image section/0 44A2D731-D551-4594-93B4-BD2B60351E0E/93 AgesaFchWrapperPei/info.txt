@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: AgesaFchWrapperPei
+Offset: FF510h
+Full size: 52Eh (1326)
+Header size: 18h (24)
+Body size: 516h (1302)
+File GUID: ABABA95A-D374-4EEE-B78F-D3C252101772
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 25h, valid
+Data checksum: AAh, valid

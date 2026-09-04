@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmdCpmWifiBandRf
+Offset: 2F48F0h
+Full size: 1EA6h (7846)
+Header size: 18h (24)
+Body size: 1E8Eh (7822)
+File GUID: C1989929-65E7-4308-BF56-7C8E657CBC17
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: B0h, valid
+Data checksum: AAh, valid

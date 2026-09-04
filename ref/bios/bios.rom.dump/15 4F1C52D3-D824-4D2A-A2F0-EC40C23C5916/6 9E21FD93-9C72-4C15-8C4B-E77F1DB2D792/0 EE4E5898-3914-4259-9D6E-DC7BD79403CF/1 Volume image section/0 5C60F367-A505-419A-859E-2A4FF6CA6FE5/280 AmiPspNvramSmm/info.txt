@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: AmiPspNvramSmm
+Offset: 7A8780h
+Full size: 44AEh (17582)
+Header size: 18h (24)
+Body size: 4496h (17558)
+File GUID: 805D1C5A-EF12-490A-9E7B-9F4AA2F97E73
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: CFh, valid
+Data checksum: AAh, valid

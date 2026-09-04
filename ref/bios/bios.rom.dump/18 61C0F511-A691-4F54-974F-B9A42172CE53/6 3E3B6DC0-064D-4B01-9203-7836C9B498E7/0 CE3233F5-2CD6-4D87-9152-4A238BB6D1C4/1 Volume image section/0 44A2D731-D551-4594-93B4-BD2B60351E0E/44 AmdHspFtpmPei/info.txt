@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: AmdHspFtpmPei
+Offset: 815F8h
+Full size: 44F6h (17654)
+Header size: 18h (24)
+Body size: 44DEh (17630)
+File GUID: C2D38A48-D3AC-43DA-A484-17F980864DEA
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 48h, valid
+Data checksum: AAh, valid

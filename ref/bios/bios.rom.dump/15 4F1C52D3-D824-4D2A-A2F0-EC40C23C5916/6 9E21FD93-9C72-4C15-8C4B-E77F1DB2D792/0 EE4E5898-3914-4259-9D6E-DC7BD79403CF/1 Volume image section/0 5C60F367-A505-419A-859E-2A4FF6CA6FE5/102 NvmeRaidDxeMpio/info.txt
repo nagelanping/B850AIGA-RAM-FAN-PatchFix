@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: NvmeRaidDxeMpio
+Offset: 3618C8h
+Full size: 308Ah (12426)
+Header size: 18h (24)
+Body size: 3072h (12402)
+File GUID: 2E13E5F1-B86D-4CF8-990F-243B6B9B8C61
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: C5h, valid
+Data checksum: AAh, valid

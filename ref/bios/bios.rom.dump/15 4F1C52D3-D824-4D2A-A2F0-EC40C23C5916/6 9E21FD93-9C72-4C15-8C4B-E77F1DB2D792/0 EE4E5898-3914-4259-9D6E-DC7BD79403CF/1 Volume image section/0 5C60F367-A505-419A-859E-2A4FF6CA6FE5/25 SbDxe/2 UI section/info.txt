@@ -1,0 +1,8 @@
+Type: Section
+Subtype: UI
+Offset: 287Ch
+Full size: 10h (16)
+Header size: 4h (4)
+Body size: Ch (12)
+Type: 15h
+Text: SbDxe

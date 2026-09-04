@@ -1,0 +1,13 @@
+Type: File
+Subtype: Pad
+Base: 1E00458h
+Offset: 458h
+Full size: 1B78h (7032)
+Header size: 18h (24)
+Body size: 1B60h (7008)
+File GUID: FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF
+Type: F0h
+Attributes: 00h
+State: F8h
+Header checksum: 8Dh, valid
+Data checksum: AAh, valid

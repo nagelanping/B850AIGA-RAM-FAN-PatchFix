@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: AmdCpmOemSmm
+Offset: 6EE980h
+Full size: 28DEh (10462)
+Header size: 18h (24)
+Body size: 28C6h (10438)
+File GUID: B9B0F38D-1F27-4F46-9F44-42D694729882
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: 11h, valid
+Data checksum: AAh, valid

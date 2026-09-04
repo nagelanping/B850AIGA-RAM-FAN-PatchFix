@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: FchI2cMasterDxe
+Offset: C7408h
+Full size: 269Ah (9882)
+Header size: 18h (24)
+Body size: 2682h (9858)
+File GUID: 151664D4-6001-478F-8C97-C51420FC2B75
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: E7h, valid
+Data checksum: AAh, valid

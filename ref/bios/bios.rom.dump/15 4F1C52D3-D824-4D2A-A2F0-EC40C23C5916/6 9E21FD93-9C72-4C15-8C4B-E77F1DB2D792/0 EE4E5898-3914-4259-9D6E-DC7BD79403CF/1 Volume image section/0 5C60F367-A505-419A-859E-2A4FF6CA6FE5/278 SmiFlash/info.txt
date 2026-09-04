@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: SmiFlash
+Offset: 79A000h
+Full size: 8EC6h (36550)
+Header size: 18h (24)
+Body size: 8EAEh (36526)
+File GUID: BC327DBD-B982-4F55-9F79-056AD7E987C5
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: 08h, valid
+Data checksum: AAh, valid

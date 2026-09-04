@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmdPspIntrusionDetectionDxe
+Offset: 173DA0h
+Full size: 26B2h (9906)
+Header size: 18h (24)
+Body size: 269Ah (9882)
+File GUID: 33D6ABF9-6CFB-4FFE-9E68-6FC63FE60252
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 0Ch, valid
+Data checksum: AAh, valid

@@ -1,0 +1,12 @@
+Type: File
+Subtype: Freeform
+Offset: 92E290h
+Full size: 957h (2391)
+Header size: 18h (24)
+Body size: 93Fh (2367)
+File GUID: 9FE7DE69-0AEA-470A-B50A-139813649189
+Type: 02h
+Attributes: 00h
+State: F8h
+Header checksum: 91h, valid
+Data checksum: AAh, valid

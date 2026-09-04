@@ -1,0 +1,10 @@
+Type: NVAR entry
+Subtype: Full
+Text: AmdSetupPHX
+Offset: 2CF9h
+Full size: 856h (2134)
+Header size: 17h (23)
+Body size: 83Fh (2111)
+Variable GUID: 3A997502-647A-4C82-998E-52EF9486A247
+GUID index: 11
+Attributes: 82h (AsciiName, Valid)

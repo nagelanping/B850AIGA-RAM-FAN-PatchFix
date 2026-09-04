@@ -1,0 +1,8 @@
+Type: Section
+Subtype: UI
+Offset: 4A34h
+Full size: 1Ch (28)
+Header size: 4h (4)
+Body size: 18h (24)
+Type: 15h
+Text: MouseDriver

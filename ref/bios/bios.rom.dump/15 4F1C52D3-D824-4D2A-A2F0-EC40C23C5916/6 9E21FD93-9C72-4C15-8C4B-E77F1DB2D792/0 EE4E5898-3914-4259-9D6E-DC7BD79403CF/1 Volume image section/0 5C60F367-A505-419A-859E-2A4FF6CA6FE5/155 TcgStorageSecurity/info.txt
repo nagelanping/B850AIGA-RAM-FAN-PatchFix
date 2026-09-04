@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: TcgStorageSecurity
+Offset: 525018h
+Full size: F892h (63634)
+Header size: 18h (24)
+Body size: F87Ah (63610)
+File GUID: 7D6DF4FD-3650-4E77-BF3A-84DC988A025C
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 70h, valid
+Data checksum: AAh, valid

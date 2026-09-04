@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmiCpmWrapperDxe
+Offset: 39A530h
+Full size: 1AC1h (6849)
+Header size: 18h (24)
+Body size: 1AA9h (6825)
+File GUID: D60CF145-F97C-4085-A73D-8D399757DFE9
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 6Ch, valid
+Data checksum: AAh, valid

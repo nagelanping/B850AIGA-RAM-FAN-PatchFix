@@ -1,0 +1,8 @@
+Type: Section
+Subtype: UI
+Offset: A64h
+Full size: 3Ch (60)
+Header size: 4h (4)
+Body size: 38h (56)
+Type: 15h
+Text: AmdPspIntrusionDetectionPei

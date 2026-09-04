@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmdCpmAudioFeatureDxe
+Offset: 2EB9B0h
+Full size: 5ABAh (23226)
+Header size: 18h (24)
+Body size: 5AA2h (23202)
+File GUID: 9A09E60C-50F2-4602-9248-1F29382DDF3B
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 25h, valid
+Data checksum: AAh, valid

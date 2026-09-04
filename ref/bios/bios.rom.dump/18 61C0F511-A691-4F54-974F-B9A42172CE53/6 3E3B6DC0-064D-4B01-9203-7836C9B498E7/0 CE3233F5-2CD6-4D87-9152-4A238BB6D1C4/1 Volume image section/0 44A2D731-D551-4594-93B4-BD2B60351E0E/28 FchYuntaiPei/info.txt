@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: FchYuntaiPei
+Offset: 476D8h
+Full size: 5636h (22070)
+Header size: 18h (24)
+Body size: 561Eh (22046)
+File GUID: EEE4E585-0585-4091-A89F-CAB51F6FCF3E
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 76h, valid
+Data checksum: AAh, valid

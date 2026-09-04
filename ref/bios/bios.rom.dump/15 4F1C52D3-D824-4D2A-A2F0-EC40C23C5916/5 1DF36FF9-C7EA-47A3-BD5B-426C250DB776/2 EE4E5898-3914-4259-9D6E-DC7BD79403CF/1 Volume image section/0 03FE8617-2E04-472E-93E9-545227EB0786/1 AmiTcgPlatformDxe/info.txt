@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmiTcgPlatformDxe
+Offset: 1320h
+Full size: 86D6h (34518)
+Header size: 18h (24)
+Body size: 86BEh (34494)
+File GUID: A29A63E3-E4E7-495F-8A6A-07738300CBB3
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 39h, valid
+Data checksum: AAh, valid

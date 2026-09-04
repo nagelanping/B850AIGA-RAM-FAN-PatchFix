@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: WakeOnVoice
+Offset: 3899C0h
+Full size: 1304h (4868)
+Header size: 18h (24)
+Body size: 12ECh (4844)
+File GUID: 88AF984B-906F-455C-AAC4-FF7C23FD6581
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 39h, valid
+Data checksum: AAh, valid

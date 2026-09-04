@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: Raid
+Offset: 39BFF8h
+Full size: 53C36h (343094)
+Header size: 18h (24)
+Body size: 53C1Eh (343070)
+File GUID: F29729C7-B759-4B5C-B134-07FC40AC3CD2
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 70h, valid
+Data checksum: AAh, valid

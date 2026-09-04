@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: SbSocPhoenixDxe
+Offset: 8D748h
+Full size: 1AAEh (6830)
+Header size: 18h (24)
+Body size: 1A96h (6806)
+File GUID: AC80A942-12F1-4296-922E-30E91F751412
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: ACh, valid
+Data checksum: AAh, valid

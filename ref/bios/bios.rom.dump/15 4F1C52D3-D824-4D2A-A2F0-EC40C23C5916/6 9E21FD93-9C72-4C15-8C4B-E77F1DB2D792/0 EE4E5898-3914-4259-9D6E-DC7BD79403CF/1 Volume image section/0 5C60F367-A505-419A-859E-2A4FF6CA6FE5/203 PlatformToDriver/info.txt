@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: PlatformToDriver
+Offset: 5E5060h
+Full size: E52h (3666)
+Header size: 18h (24)
+Body size: E3Ah (3642)
+File GUID: 3780B594-32A4-4593-B8CE-8A3F404F61F4
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: B8h, valid
+Data checksum: AAh, valid

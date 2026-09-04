@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: SkOcRplDxe
+Offset: 55C0E8h
+Full size: 466Eh (18030)
+Header size: 18h (24)
+Body size: 4656h (18006)
+File GUID: B824EA89-8BF6-4ED5-9858-53B274F6111F
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: C3h, valid
+Data checksum: AAh, valid

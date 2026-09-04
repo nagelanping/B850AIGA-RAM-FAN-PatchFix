@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmdMemRestoreDxe
+Offset: EFE58h
+Full size: 147Ah (5242)
+Header size: 18h (24)
+Body size: 1462h (5218)
+File GUID: 95DE95F8-A215-48C3-814A-40F07B925D24
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 20h, valid
+Data checksum: AAh, valid

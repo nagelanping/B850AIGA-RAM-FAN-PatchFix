@@ -1,0 +1,11 @@
+Type: NVAR entry
+Subtype: Full
+Text: SkSmartFanSetupData
+Base: 1DC2BC9h
+Offset: 2B39h
+Full size: 8Fh (143)
+Header size: 1Fh (31)
+Body size: 70h (112)
+Variable GUID: CE8621F0-3B53-48E4-A014-14A739F54EB9
+GUID index: 12
+Attributes: 82h (AsciiName, Valid)

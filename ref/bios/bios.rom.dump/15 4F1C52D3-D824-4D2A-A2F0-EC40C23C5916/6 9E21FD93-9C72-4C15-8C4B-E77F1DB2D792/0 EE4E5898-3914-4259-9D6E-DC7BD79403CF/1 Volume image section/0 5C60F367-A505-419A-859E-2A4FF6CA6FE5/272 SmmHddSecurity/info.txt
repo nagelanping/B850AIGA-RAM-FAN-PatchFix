@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: SmmHddSecurity
+Offset: 77BDC0h
+Full size: 3EAEh (16046)
+Header size: 18h (24)
+Body size: 3E96h (16022)
+File GUID: 316B1230-0500-4592-8C09-EABA0FB6B07F
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: 23h, valid
+Data checksum: AAh, valid

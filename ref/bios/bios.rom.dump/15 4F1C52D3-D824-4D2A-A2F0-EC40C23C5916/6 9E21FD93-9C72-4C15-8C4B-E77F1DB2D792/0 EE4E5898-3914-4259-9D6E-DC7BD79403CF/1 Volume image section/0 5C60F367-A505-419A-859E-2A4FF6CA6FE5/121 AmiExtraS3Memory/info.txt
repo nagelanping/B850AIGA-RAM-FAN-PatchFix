@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmiExtraS3Memory
+Offset: 40FA48h
+Full size: C6Ah (3178)
+Header size: 18h (24)
+Body size: C52h (3154)
+File GUID: C4ECA0B2-5277-4F2B-3ECB-E4175C94812E
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 9Bh, valid
+Data checksum: AAh, valid

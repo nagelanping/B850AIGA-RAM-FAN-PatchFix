@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: SmmChildDispatcher2
+Offset: 67E8A0h
+Full size: 2AB6h (10934)
+Header size: 18h (24)
+Body size: 2A9Eh (10910)
+File GUID: E53734A3-E594-4C25-B1A2-081445650F7F
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: 92h, valid
+Data checksum: AAh, valid

@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: AmdMemSmbiosV2RplPei
+Offset: 51C78h
+Full size: 1C1Ah (7194)
+Header size: 18h (24)
+Body size: 1C02h (7170)
+File GUID: F5D16B69-80C9-F8A0-C28D-ADC6F0D71370
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 3Dh, valid
+Data checksum: AAh, valid

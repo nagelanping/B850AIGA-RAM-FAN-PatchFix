@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: SbSocGraniteRidgeDxe
+Offset: 8BC88h
+Full size: 1ABAh (6842)
+Header size: 18h (24)
+Body size: 1AA2h (6818)
+File GUID: AC80A942-12F1-4296-922E-30E91F753930
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 5Dh, valid
+Data checksum: AAh, valid

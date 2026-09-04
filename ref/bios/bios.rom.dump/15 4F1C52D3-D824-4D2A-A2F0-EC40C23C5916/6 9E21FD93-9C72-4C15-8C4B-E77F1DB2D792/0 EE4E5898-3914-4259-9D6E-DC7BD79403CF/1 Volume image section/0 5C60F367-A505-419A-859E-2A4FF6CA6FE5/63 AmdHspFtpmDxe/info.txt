@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmdHspFtpmDxe
+Offset: 141CF0h
+Full size: 7286h (29318)
+Header size: 18h (24)
+Body size: 726Eh (29294)
+File GUID: 851D895C-2212-4D81-8316-18D7C13E5F60
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 32h, valid
+Data checksum: AAh, valid

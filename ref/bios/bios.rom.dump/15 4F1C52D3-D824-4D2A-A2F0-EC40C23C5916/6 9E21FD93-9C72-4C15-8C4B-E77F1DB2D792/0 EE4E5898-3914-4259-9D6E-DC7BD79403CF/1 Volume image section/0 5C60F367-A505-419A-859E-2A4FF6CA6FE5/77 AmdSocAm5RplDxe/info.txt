@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: AmdSocAm5RplDxe
+Offset: 1920D0h
+Full size: 2C66h (11366)
+Header size: 18h (24)
+Body size: 2C4Eh (11342)
+File GUID: CDD36FE6-CF3E-4B06-9241-0C8C45098049
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 92h, valid
+Data checksum: AAh, valid

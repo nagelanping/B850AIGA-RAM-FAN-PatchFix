@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: SkOcRplPei
+Offset: FFA40h
+Full size: 117Eh (4478)
+Header size: 18h (24)
+Body size: 1166h (4454)
+File GUID: AB0A46F4-ED7A-477C-B0E7-E12278E526AC
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 89h, valid
+Data checksum: AAh, valid

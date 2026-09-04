@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: SkPttDxe
+Offset: 54EA08h
+Full size: 265Ah (9818)
+Header size: 18h (24)
+Body size: 2642h (9794)
+File GUID: AFB436A3-CE6E-4106-BFA8-ECF7EB1B6486
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: 80h, valid
+Data checksum: AAh, valid

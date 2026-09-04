@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: AmiPspOfbd
+Offset: 7ACC30h
+Full size: 3C92h (15506)
+Header size: 18h (24)
+Body size: 3C7Ah (15482)
+File GUID: 2709A182-0DDA-4A91-BA53-11032B713633
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: EDh, valid
+Data checksum: AAh, valid

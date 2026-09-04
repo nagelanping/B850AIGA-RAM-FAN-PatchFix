@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: CryptoPei
+Offset: FC3C8h
+Full size: 12FAh (4858)
+Header size: 18h (24)
+Body size: 12E2h (4834)
+File GUID: 0D1CE46B-72D9-4BA7-95DA-23511865E661
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 92h, valid
+Data checksum: AAh, valid

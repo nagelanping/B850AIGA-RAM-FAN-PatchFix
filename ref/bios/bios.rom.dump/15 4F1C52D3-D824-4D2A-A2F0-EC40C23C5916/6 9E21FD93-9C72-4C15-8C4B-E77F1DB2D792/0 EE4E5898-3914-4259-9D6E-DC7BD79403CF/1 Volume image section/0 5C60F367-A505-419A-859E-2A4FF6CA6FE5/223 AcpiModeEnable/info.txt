@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: AcpiModeEnable
+Offset: 67D000h
+Full size: 189Ah (6298)
+Header size: 18h (24)
+Body size: 1882h (6274)
+File GUID: 750890A6-7ACF-4F4F-81BD-B400C2BEA95A
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: 35h, valid
+Data checksum: AAh, valid

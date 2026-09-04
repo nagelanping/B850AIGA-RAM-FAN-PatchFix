@@ -1,0 +1,13 @@
+Type: File
+Subtype: SMM module
+Text: AodSmm
+Offset: 6F5118h
+Full size: CEF6h (52982)
+Header size: 18h (24)
+Body size: CEDEh (52958)
+File GUID: B54299AD-B521-4BB8-A361-689249FE72B9
+Type: 0Ah
+Attributes: 00h
+State: F8h
+Header checksum: ACh, valid
+Data checksum: AAh, valid

@@ -1,0 +1,7 @@
+Type: NVAR GUID store
+Subtype: 
+Base: 1DC35EFh
+Offset: 355Fh
+Full size: F0h (240)
+Body size: F0h (240)
+GUIDs in store: 15

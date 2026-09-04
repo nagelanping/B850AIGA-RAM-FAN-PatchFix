@@ -1,0 +1,13 @@
+Type: File
+Subtype: PEI module
+Text: AmiTpm20PlatformPei
+Offset: EB430h
+Full size: EB3Ah (60218)
+Header size: 18h (24)
+Body size: EB22h (60194)
+File GUID: 0D8039FF-49E9-4CC9-A806-BB7C31B0BCB0
+Type: 06h
+Attributes: 00h
+State: F8h
+Header checksum: 97h, valid
+Data checksum: AAh, valid

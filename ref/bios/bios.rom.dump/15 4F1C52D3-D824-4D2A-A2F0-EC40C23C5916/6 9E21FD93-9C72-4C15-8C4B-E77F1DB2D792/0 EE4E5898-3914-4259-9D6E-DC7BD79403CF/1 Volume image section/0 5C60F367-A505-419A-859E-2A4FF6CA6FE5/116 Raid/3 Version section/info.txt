@@ -1,0 +1,9 @@
+Type: Section
+Subtype: Version
+Offset: 53C18h
+Full size: 1Eh (30)
+Header size: 6h (6)
+Body size: 18h (24)
+Type: 14h
+Build number: 0
+Version string: 9.03.03.117

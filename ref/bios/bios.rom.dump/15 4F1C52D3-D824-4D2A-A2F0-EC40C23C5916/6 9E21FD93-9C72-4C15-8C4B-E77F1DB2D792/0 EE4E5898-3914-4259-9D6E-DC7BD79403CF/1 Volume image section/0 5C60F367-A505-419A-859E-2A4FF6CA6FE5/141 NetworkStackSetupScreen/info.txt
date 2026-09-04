@@ -1,0 +1,13 @@
+Type: File
+Subtype: DXE driver
+Text: NetworkStackSetupScreen
+Offset: 4F18C8h
+Full size: C86h (3206)
+Header size: 18h (24)
+Body size: C6Eh (3182)
+File GUID: 21891A9E-763E-4377-8841-8D5C90D88C51
+Type: 07h
+Attributes: 00h
+State: F8h
+Header checksum: A0h, valid
+Data checksum: AAh, valid

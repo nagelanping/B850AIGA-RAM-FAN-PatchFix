@@ -2,6 +2,7 @@
 
 ## 当前状态（置顶）
 
+- **Linux 补丁初版已实现（未实机测试）**：`patch/linux/` 完成 Rust 零依赖实现（`port.rs`/`smbus.rs`/`nct.rs`/`main.rs` + systemd unit + README），`cargo fmt/check/test/clippy` 全通过，含 `--once` 阶段 B 验证入口。等待机主实机测试（命令见 `patch/linux/README.md`）。
 - **根因已确认**：内存风扇温度源被固件配置为 NCT6796D 的 `Virtual_TEMP`（src `0x0a`）。该通道没有硬件数据，必须由软件持续写入；固件只在 BIOS 打开内存风扇曲线页时喂值，重启后喂值停止，因此风扇回到低档（约 941 rpm）。
 - **关键链路已完整逆向**：南桥 SMBus `0xb00` 可读 DIMM 温度；温度写入 NCT 页 `0x0c`、reg `0x36` 后，`FAN5=MEM_FAN` 按曲线响应。
 - **前置实验已完成**：Virtual_TEMP 值寄存器定位成功；NCT 自身 `SMBUSMASTER` 路径排除。
@@ -263,3 +264,12 @@ hwmon9 = nct6799
 - 项目方案与固件行为已区分：固件是首个成功地址回退；项目首版计划轮询全部候选地址并取最高值，但仍需实机确认地址映射和空槽状态。
 - 已修正失效语义：服务停止不会自动回到 941 rpm，Virtual_TEMP 通常保持最后一次写入值；必须在常驻服务前定义 stale/fail-safe 策略。
 - 复核发现的阻塞项已写入 `WORKFLOW.md` 阶段 0；在并发、错误状态和失联行为确认前，不进入长期 2 秒部署。
+
+## 2026-09-04 Linux 补丁初版实现
+
+- 环境修正：WORKFLOW.md 所述 "cargo、rustc 均已找到" 不实——只有 rustup shim，无已安装工具链；已执行 `rustup default stable`（rustc 1.98.1）。
+- 已创建 `patch/linux/`：Cargo 工程（零运行时依赖，edition 2021），`src/port.rs`（`/dev/port` 单字节读写，逐次校验长度）、`src/smbus.rs`（HST word read，候选 7-bit 地址 `0x53/0x52/0x51/0x50`，BUSY 外任意状态位置位即判失败，100ms 超时；换算 `((raw<<3)>>5)*25/100`，有效范围 0–120°C）、`src/nct.rs`（页 `0x0c` 选择 + reg `0x36` 写入 + 读回校验）、`src/main.rs`（`--once` 单次验证 / 2s 常驻循环；曾发现的 DIMM 本轮缺失则整轮跳过写入；连续失败按 10 倍数降频日志）、systemd unit、README（构建/实机验证/安装/回滚）。
+- 质量门：`cargo fmt`、`cargo check`、`cargo test`（2 项：raw=608→38°C、边界与负温拒绝）、`cargo clippy` 全部通过；`cargo build --release` 产出二进制。
+- 决策：温度范围定 0–120°C；负温度（raw 高位为符号样式）换算后越界拒绝，不写入；`gitignore` 追加 `patch/linux/target/`，`Cargo.lock` 纳入版本管理。
+- 待办更新：等待机主按 `patch/linux/README.md` 做阶段 B `--once` 实机验证（含 0x50–0x53 与两个 spd5118 hwmon 对应关系、空槽返回状态、与内核驱动的并发确认）；通过后再部署阶段 C 常驻服务。
+- 审查遗留（不阻塞实机，长期部署前处理）：`known` DIMM 集合只增不减——空槽若偶发一次假成功会永久卡死写入；候选缓解为空槽状态实测后改为"连续 2 次成功才进 known"或"连续 N 轮缺失移出 known"。

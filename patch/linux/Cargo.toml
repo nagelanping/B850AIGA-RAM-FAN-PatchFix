@@ -1,0 +1,7 @@
+[package]
+name = "ram-fan-virtual-temp"
+version = "0.1.0"
+edition = "2021"
+description = "Feed DIMM temperature to NCT6796D Virtual_TEMP so MEM_FAN (FAN5) follows the BIOS curve"
+
+# 零运行时依赖（WORKFLOW.md §3）

@@ -1,0 +1,17 @@
+[Unit]
+Description=Feed DIMM temperature to NCT Virtual_TEMP for RAM fan
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/ram-fan-virtual-temp
+Restart=on-failure
+RestartSec=2
+User=root
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

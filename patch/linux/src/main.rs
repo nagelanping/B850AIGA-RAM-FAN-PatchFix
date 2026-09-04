@@ -1,6 +1,6 @@
 //! ram-fan-virtual-temp：把 DIMM 温度持续喂给 NCT6796D Virtual_TEMP（SIO 页 0x0c reg 0x36），
 //! 使 FAN5=MEM_FAN 按 BIOS 曲线运行。用法：
-//!   ram-fan-virtual-temp           常驻，每 2s 一轮（systemd 服务）
+//!   ram-fan-virtual-temp           常驻，每 0.5s 一轮（systemd 服务）
 //!   ram-fan-virtual-temp --once    单次“读取→汇总→写入”，阶段 B 实机验证用
 //!
 //! 温度读取走内核 spd5118 hwmon（sysfs），避免与内核争抢 SMBus 控制器；
@@ -13,7 +13,7 @@ mod sysfs;
 use std::path::PathBuf;
 use std::time::Duration;
 
-const CYCLE: Duration = Duration::from_secs(2);
+const CYCLE: Duration = Duration::from_millis(500);
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();

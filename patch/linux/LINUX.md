@@ -3,7 +3,7 @@
 把 DIMM 温度持续喂给 NCT6796D 的 `Virtual_TEMP`（SIO 页 `0x0c` reg `0x36`），
 使 `FAN5=MEM_FAN` 在 BIOS 数据源为"内存温度"时按 BIOS 曲线运行。
 
-每约 2 秒：读内核 `spd5118` hwmon（sysfs）各 `temp*_input` → 取有效读数最高值 → 写入。
+每 0.5 秒：读内核 `spd5118` hwmon（sysfs）各 `temp*_input` → 取有效读数最高值 → 写入。
 只写这一个寄存器；不修改曲线、温度源、模式、BIOS 或内核驱动。
 
 ## 为什么读 sysfs 而不是自己发 SMBus
@@ -66,4 +66,4 @@ sudo rm /etc/systemd/system/ram-fan-virtual-temp.service /usr/local/sbin/ram-fan
 
 - ~~与 `nct6775` 并发访问 NCT 口~~：已通过短时观察（阶段 C 部署实机 2 分钟采样无毛刺，见 LOG）。用户态的多步 SIO 序列无法与内核驱动原子化，仍保留理论竞态风险。
 - `ProtectSystem=strict` sandbox：已验证通过（服务在 strict sandbox 下正常读写 `/dev/port` 与 `/sys`）。
-- ~~stale 策略~~：已定案（机主 2026-09-04）——失败只跳过写入并告警，不设超时回退值（见 LOG 阶段 C 准备）。
+- ~~stale 策略~~：已定案——失败只跳过写入并告警，不设超时回退值（见 LOG 阶段 C 准备）。

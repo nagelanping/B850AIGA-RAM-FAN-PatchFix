@@ -2,7 +2,7 @@
 
 ## 当前状态（置顶）
 
-- **Linux 补丁已完成并实机验证（pre 版本）**：`patch/linux/` 零依赖 Rust 服务（`port.rs`/`sysfs.rs`/`nct.rs`/`main.rs` + systemd unit + README），`cargo fmt/check/test/clippy` 全通过（4 项测试）。读取走 spd5118 sysfs（避免与内核争抢 SMBus 0xb00），写入 NCT 页 0x0c reg 0x36。实机闭环通过：`--once` samples=[44,41]→写 44°C，pwm5 55→111、fan5 944→1571；systemd 常驻、sandbox、nct6775 并发均验证通过。
+- **Linux 补丁已完成并实机验证**：`patch/linux/` 零依赖 Rust 服务（`port.rs`/`sysfs.rs`/`nct.rs`/`main.rs` + systemd unit + README），`cargo fmt/check/test/clippy` 全通过（4 项测试）。读取走 spd5118 sysfs（避免与内核争抢 SMBus 0xb00），写入 NCT 页 0x0c reg 0x36。实机闭环通过：`--once` samples=[44,41]→写 44°C，pwm5 55→111、fan5 944→1571；systemd 常驻、sandbox、nct6775 并发均验证通过。
 - **根因已确认**：内存风扇温度源被固件配置为 NCT6796D 的 `Virtual_TEMP`（src `0x0a`）。该通道没有硬件数据，必须由软件持续写入；固件只在 BIOS 打开内存风扇曲线页时喂值，重启后喂值停止，因此风扇回到低档（约 941 rpm）。
 - **关键链路已完整逆向**：南桥 SMBus `0xb00` 可读 DIMM 温度；温度写入 NCT 页 `0x0c`、reg `0x36` 后，`FAN5=MEM_FAN` 按曲线响应。
 - **前置实验已完成**：Virtual_TEMP 值寄存器定位成功；NCT 自身 `SMBUSMASTER` 路径排除。
@@ -28,7 +28,7 @@
 | SMBus 访问            | 从地址`0x53`（读写地址 `0xa6/0xa7`），命令 `0x31`，读 2 字节                 |
 | 温度换算              | `(raw << 3 >> 5) * 25 / 100`，实测 38.0°C                                       |
 | 写入目标              | 选择 NCT 页`0x0c`，写 reg `0x36`                                               |
-| 建议周期              | 约 2 秒                                                                            |
+| 更新周期              | 0.5 秒                                                                            |
 
 NCT 页选择序列：
 
@@ -315,3 +315,21 @@ hwmon9 = nct6799
 - 已修复：空目录/无 `temp*_input` 和目录枚举错误均使本轮失败；失败详情统一由主循环按首次/每 10 次输出，恢复时记录；新增 2 项 sysfs 读取测试，测试总数为 4。
 - 已同步 README、WORKFLOW 和 LOG。NCT SIO 多步访问与 `nct6775` 的原子协调无法由用户态实现，保留为已知理论竞态；此前机主短时并发观察无毛刺。
 - 子代理第二次完整复审：**通过，允许提交**。顶层 hwmon 错误、known name 错误、空输入、枚举错误和失败日志路径均已覆盖；4 项单元测试及全部非特权质量门通过。非阻断限制：重启恢复/有效动态升温尚未完成，SIO 多步访问仍有理论竞态。
+
+### 文档（2026-09-04）
+
+- 新增仓库总 README：说明问题原因、Linux 当前状态、数据链路、边界、已知风险和目录。
+- 新增 `patch/linux/INSTALL.md`：包含前置检查、构建、首次安装、更新、服务验证、`--once`、温度/风扇观察、卸载和回滚。
+- 文档明确：Linux 当前为 pre 版本；系统重启恢复和有效动态升温尚未完成；SIO 多步访问竞态仍是已知风险。
+
+### 用户文档与 Linux 发布包（2026-09-04）
+
+### Linux 服务周期调整（2026-09-04）
+
+- 服务更新周期从 2 秒改为 0.5 秒（`Duration::from_millis(500)`），同步源码、仓库内用户文档和 WORKFLOW。
+- `release/linux/` 未修改；机主确认内容后手动复制新版二进制和文档。
+
+- 根目录 `README.md` 改为面向用户的项目说明：适用范围、安装入口、已验证状态、限制和卸载方式。
+- `patch/linux/INSTALL.md` 改为用户操作教程，不要求 Git、Cargo 或源码；安装、更新、验证、卸载和回滚命令均从发布包目录执行。
+- 新建 `release/linux/`，包含成品二进制、systemd 服务文件、MIT `LICENSE`、用户 `README.md` 和 `INSTALL.md`。发布包不依赖用户的仓库路径。
+- 发布二进制 SHA-256：`ae62f10c082b57dc44410fbd67906141b4d24fd6a7e5f01839fd9ce0c399f513`。

@@ -59,7 +59,7 @@ patch/linux/
 
 - `std::fs::File` + `FileExt::{read_at, write_at}` 访问 `/dev/port`；
 - `std::time::{Duration, Instant}` 控制定时；
-- `std::thread::sleep` 实现约 2 秒周期；
+- `std::thread::sleep` 实现 0.5 秒周期；
 - `eprintln!` 输出 journald 可收集的日志。
 
 ### 3.1 `port.rs`：最小端口后端
@@ -152,12 +152,11 @@ loop:
     校验温度
     写 Virtual_TEMP
     记录成功/失败
-    sleep(2s)
-```
+    sleep(0.5s)
 
 建议行为：
 
-- 默认周期 2 秒；第一版可用常量，确认需求后再加一个简单命令行参数；
+- 默认周期 0.5 秒；使用常量，不增加命令行配置。
 - 保持零依赖首版不编写 signal handler：systemd 的 SIGTERM 直接终止进程，内核自动关闭 fd；不做退出时“恢复值”写入。若以后需要优雅停机逻辑，再单独引入 Unix signal 依赖；
 - 单次 SMBus 失败记录 warning，继续下一轮；连续失败不要刷屏，可做简单计数后按倍数降频日志；
 - NCT 写失败同样继续重试；启动时权限或 `/dev/port` 打开失败应直接退出，让 systemd 报错；
@@ -231,7 +230,7 @@ sudo systemctl enable --now ram-fan-virtual-temp.service
 
 验收前提：阶段 B 的单次读写已成功，且写入 30°C/40°C 的响应与 `LOG.md` 中历史数据一致。
 
-1. **已完成**：加入 2 秒循环和 systemd unit。
+1. **已完成**：加入 0.5 秒循环和 systemd unit。
 2. **已完成**：安装和回滚文档。
 3. **已完成**：服务启动后曲线响应。
 4. **部分完成**：已完成单轮和约 2 分钟并发观察；内存加压动态测试未形成有效升温数据。

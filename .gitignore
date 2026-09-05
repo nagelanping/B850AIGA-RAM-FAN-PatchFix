@@ -21,6 +21,9 @@ patch/windows/service/x64/
 patch/windows/service/ramfan-service/x64/
 patch/windows/service/ramfan-service/obj/
 
+
+# 实验 B 产物与日志（含测试签名包、catalog、.sys、证书状态），不入库
+patch/windows/experiment-b-logs/
 # IDE 配置
 .vscode/
 

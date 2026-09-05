@@ -109,6 +109,7 @@ Windows 版本优先采用 **KMDF 内核驱动 + Windows Service**，不把 WinR
 - Ghidra 12.1.2 与 JDK26 不兼容；固件分析使用已有 objdump/flat-image 结果，不为 Windows 开发重复建立 Ghidra 流程。
 - 系统无 `xxd` 时使用 `od`。
 - Windows PNP0C02 目标实例不跨实例合并：实机 `\700` 的声明范围同时覆盖 SMBus `0xb00-0xb0f` 与标准 SIO `0x2e/0x2f`（在 `0x22-0x3f` 内），`\0` 的声明含 NCT `0x290-0x29f`（另有无关的 `0x200-0x23f`）；SMBUS/NCT 角色分类不得要求 NCT 实例自带标准 SIO，也不要把含 SIO 的 `\700` 判为不合法的 SMBus 实例。
+- Windows 实机已验证：目标 `PNP0C02\700`/`\0` 由 machine.inf 提供且 Enum 键无 Service（无功能驱动 FDO），upper filter 无法附加（运行期与开机栈构建均不生效），function-driver 替换被 pnputil/SetupDi/UpdateDriver 拒绝；因此“绑定 PnP 设备持有 translated resources”的 Windows 访问模型在本平台不可行，不得以自声明端口或绕过签名方式交付（WORKFLOW §7，2026-09-05）。
 
 ## 工作规则
 

@@ -125,6 +125,25 @@ typedef struct _RAMFAN_FEED_ONCE_OUT {
 #define RAMFAN_FEED_HW_MISMATCH    3
 #define RAMFAN_FEED_HW_UNAVAILABLE 4
 
+// ---- QUERY_RESOURCE 输出：PnP 资源登记快照（只读，不访问端口） ----
+// 供实验 B 在加载 upper-filter 后确认两个目标实例的 PrepareHardware 是否
+// 触发并正确登记 translated port resources，无需任何硬件 I/O。
+typedef struct _RAMFAN_QUERY_RESOURCE_OUT {
+    unsigned char  SmbusReady;      // SMBUS 角色槽已登记且无冲突
+    unsigned char  NctReady;        // NCT 角色槽已登记且无冲突
+    unsigned char  SmbusConflict;   // SMBUS 目标被多个实例声明
+    unsigned char  NctConflict;     // NCT 目标被多个实例声明
+    unsigned char  SioReady;        // 标准 SIO 0x2e/0x2f 已随角色实例登记
+    unsigned char  HwComplete;      // SMBUS+NCT 均 Ready 且 SIO 可用
+    unsigned short SmbusBase;       // 登记后的 SMBus 基址（预期 0x0b00）
+    unsigned short NctBase;         // 登记后的 NCT 自定义口基址（预期 0x0290）
+    unsigned short StandardSioBase; // 登记后的标准 SIO 基址（预期 0x002e）
+    unsigned short Reserved;
+} RAMFAN_QUERY_RESOURCE_OUT;
+
+#define IOCTL_RAMFAN_QUERY_RESOURCE \
+    CTL_CODE(RAMFAN_IOCTL_BASE, 0x803, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
 #ifndef CTL_CODE
 #define CTL_CODE(DeviceType, Function, Method, Access) \
     (((DeviceType) << 16) | ((Access) << 14) | ((Function) << 2) | (Method))

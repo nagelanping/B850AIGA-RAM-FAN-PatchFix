@@ -144,3 +144,7 @@ patch/windows/
 - 若 SMBus 被 Windows 驱动独占或 raw HST 访问不稳定，优先研究 Windows 可用的标准 SPD/SMBus 内核接口；不在服务层增加轮询竞争、全局用户态锁或 GUI。
 - 若无法获得合法的 NCT 端口资源/访问模型，或控制器超时后无法安全恢复，停在只读阶段，不实现写回。
 - 只有 OS 驱动方案确认不可行，才重新评估 SMM 固件方案；刷 BIOS 必须另行批准、备份和签名校验。
+
+#### 2026-09-05 实机结论（§7 触发记录）
+
+实机实验证明本平台 PNP0C02 资源绑定路径不可行：`\700`/`\0` 由 machine.inf 提供且无 Service（无功能驱动 FDO）；upper filter 附加在运行期与开机栈构建均不生效；function-driver 替换被 pnputil（“function driver was not specified”）、SetupDi（GLE 1784）与 `UpdateDriverForPlugAndPlayDevicesW`（0xE0000219）三路拒绝。按本节点策略暂停 Windows 端口访问实现并记录；不得以自声明端口或绕过签名方式交付。

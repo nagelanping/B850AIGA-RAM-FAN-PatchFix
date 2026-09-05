@@ -10,6 +10,7 @@
 
 /* ---- 回调前置声明 ---- */
 DRIVER_INITIALIZE DriverEntry;
+EVT_WDF_DRIVER_UNLOAD RamFanEvtDriverUnload;
 EVT_WDF_DRIVER_DEVICE_ADD RamFanEvtDeviceAdd;
 EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL RamFanEvtIoDeviceControl;
 EVT_WDF_FILE_CLOSE RamFanEvtFileClose;

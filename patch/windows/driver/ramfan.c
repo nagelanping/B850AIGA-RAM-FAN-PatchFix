@@ -33,6 +33,7 @@ WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(RAMFAN_PNP_CONTEXT, RamFanGetPnpContext);
 
 typedef struct _RAMFAN_GLOBAL_CONTEXT {
     WDFWAITLOCK Lock;
+    WDFDEVICE ControlDevice;
     WDFDEVICE SmbusDevice;
     WDFDEVICE NctDevice;
     ULONG SmbusStart;
@@ -267,6 +268,7 @@ DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
     NTSTATUS status;
 
     WDF_DRIVER_CONFIG_INIT(&config, RamFanEvtDeviceAdd);
+    config.EvtDriverUnload = RamFanEvtDriverUnload;
     WDF_OBJECT_ATTRIBUTES_INIT(&attrs);
     WDF_OBJECT_ATTRIBUTES_SET_CONTEXT_TYPE(&attrs, RAMFAN_GLOBAL_CONTEXT);
     status = WdfDriverCreate(DriverObject,
@@ -291,6 +293,19 @@ DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
     /* 控制设备不承载端口资源；其 IOCTL 仍在安全阻断状态。 */
     return RamFanCreateDevice(driver);
 }
+/* ---- EvtDriverUnload：删除控制设备，允许驱动卸载/更换 ---- */
+VOID
+RamFanEvtDriverUnload(WDFDRIVER Driver)
+{
+    RAMFAN_GLOBAL_CONTEXT *global;
+
+    global = RamFanGetGlobalContext(Driver);
+    if (global->ControlDevice != NULL) {
+        WdfObjectDelete(global->ControlDevice);
+        global->ControlDevice = NULL;
+    }
+}
+
 
 /* ---- PnP 设备与 translated port resource 识别 ---- */
 NTSTATUS
@@ -302,6 +317,8 @@ RamFanEvtDeviceAdd(WDFDRIVER Driver, PWDFDEVICE_INIT DeviceInit)
 
     UNREFERENCED_PARAMETER(Driver);
 
+    /* upper-filter 形态（LOG 2026-09-05 实验 B/C：本平台 PNP0C02 无功能驱动层，
+       filter 不挂载、function 替换被系统拒绝；此调用仅为骨架设计保留）。 */
     WdfFdoInitSetFilter(DeviceInit);
     WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&pnpCallbacks);
     pnpCallbacks.EvtDevicePrepareHardware = RamFanEvtPrepareHardware;
@@ -434,6 +451,8 @@ RamFanCreateDevice(WDFDRIVER Driver)
     }
 
     /* 控制设备必须显式结束初始化，之后才接受 I/O */
+    WdfDeviceConfigureRequestDispatching(device, ext->Queue, WdfRequestTypeDeviceControl);
+    RamFanGetGlobalContext(WdfDeviceGetDriver(device))->ControlDevice = device;
     WdfControlFinishInitializing(device);
 
     return STATUS_SUCCESS;
@@ -506,6 +525,43 @@ RamFanEvtIoDeviceControl(WDFQUEUE Queue,
         status = STATUS_SUCCESS;
         break;
     }
+
+    case IOCTL_RAMFAN_QUERY_RESOURCE: {
+        RAMFAN_QUERY_RESOURCE_OUT out = {0};
+        WDFDEVICE device;
+        RAMFAN_GLOBAL_CONTEXT *global;
+
+        if (OutputBufferLength < sizeof(out)) {
+            status = STATUS_BUFFER_TOO_SMALL;
+            break;
+        }
+        device = WdfIoQueueGetDevice(Queue);
+        global = RamFanGetGlobalContext(WdfDeviceGetDriver(device));
+        WdfWaitLockAcquire(global->Lock, NULL);
+        out.SmbusReady = global->SmbusReady;
+        out.SmbusConflict = global->SmbusConflict;
+        out.NctReady = global->NctReady;
+        out.NctConflict = global->NctConflict;
+        out.SioReady = (global->StandardSioStart != 0);
+        out.SmbusBase = (USHORT)global->SmbusStart;
+        out.NctBase = (USHORT)global->NctStart;
+        out.StandardSioBase = (USHORT)global->StandardSioStart;
+        out.HwComplete = global->SmbusReady && !global->SmbusConflict &&
+                         global->NctReady && !global->NctConflict &&
+                         out.SioReady;
+        WdfWaitLockRelease(global->Lock);
+
+        status = WdfRequestRetrieveOutputBuffer(Request, sizeof(out),
+                                                 &outBuffer, &outLen);
+        if (!NT_SUCCESS(status)) {
+            break;
+        }
+        RtlCopyMemory(outBuffer, &out, sizeof(out));
+        WdfRequestSetInformation(Request, sizeof(out));
+        status = STATUS_SUCCESS;
+        break;
+    }
+
 
     default:
         break;

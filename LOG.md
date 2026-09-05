@@ -4,7 +4,7 @@
 
 - **Linux 0.1 已归档**：实现和完整 Linux 工作记录位于 `archive/0.1/linux/`；发布包仍在 `release/linux/`。
 - **当前工作目标**：实现 Windows KMDF 内核驱动 + Windows Service，持续向 NCT `Virtual_TEMP` 喂入 DIMM 温度。
-- **当前阶段**：Windows 阶段 2 资源绑定路径已决策（通用 PNP0C02 upper-filter + 运行时双门禁；备选 per-device UpperFilters），角色分类规则已按实机证据修正并通过无硬件自检；尚未恢复 SMBus/NCT 访问。下一步需机主执行只读清单 A 与可逆加载实验 B（见下）。资源所有权、INF 绑定、catalog/签名和回滚仍未满足安装门槛。
+- **当前阶段**：Windows 阶段 2 PnP 资源绑定经实机实验证伪——PNP0C02 目标节点无功能驱动层，upper filter 不挂载、function-driver 替换被系统拒绝（实验 B/C，详见下）。按 WORKFLOW.md §7 暂停 Windows 端口访问路径，FEED_ONCE 保持阻断。Linux 版本为当前交付。保留的控制设备分发修复与 QUERY_RESOURCE 等改进未提交待审。
 ## 根因与目标链路
 
 
@@ -215,6 +215,44 @@ outb((v & 0xf0) | page, 0x296)
 - 关键未解疑点：实机 `PNP0C02\0` 状态为 PnP Stopped/查询 OK，upper-filter 只有在该节点被带动 start 时才会收到 `EvtDevicePrepareHardware`；若无法启动则 NCT 授权路径失效。translated resource 只证明该 devnode 获得该范围，不等于独占授权，不证明功能驱动/固件不访问。
 - 决策子代理建议：本会话只做上述纯逻辑修正并保持门禁；下一步先由机主执行只读清单 A（全系统 PNP0C02 计数、两节点 `/resources` `/problem`、Service/UpperFilters/LowerFilters/ConfigFlags 注册表、790B 驱动名），再视批准执行可逆加载实验 B（测试签名 + `pnputil /add-driver /install` + 逐节点 restart/enable + 只读 IOCTL + 回滚要点）。失效条件：任何非目标 PNP0C02 挂 filter 后新增 problem、目标节点 start 失败且 restart/enable 无法恢复、重启后 translated list 不含目标范围、SetupAPI 写 UpperFilters 被拒或重启后丢失，或只读探测发现 HST 被独占/不稳定——任一出现即记录并触发 WORKFLOW.md §7 转向，不静默继续。
 - 门禁状态不变：`FEED_ONCE` 仍返回 `RAMFAN_FEED_HW_UNAVAILABLE`，INF 维持 `.inf.disabled`，install/uninstall 脚本仍拒绝，未安装驱动、未访问端口、未写 NCT。
+## 2026-09-05 目标机清单 A 只读结果（本机即目标机）
+
+- 机主确认本会话所在机器即目标机：Windows 11 专业工作站版 10.0.26200 x64，管理员权限；`PCI\VEN_1022&DEV_790B&SUBSYS_07606688&REV_71\3&11583659&0&A0`（AMD SMBUS）状态 OK。
+- PNP0C02 实例共 6 个：`\0 \14 \15 \8B \8C \700`，全部 machine.inf、Get-PnpDevice 状态 OK、pnputil `/problem` 无问题码；`\700` 与 `\0` 的 Enum 键无 Service/UpperFilters/LowerFilters 值，ConfigFlags=0x0。
+- `ACPI\PNP0C02\700` IO 资源含 `0x10-0x1f`、`0x22-0x3f`（覆盖标准 SIO `0x2e/0x2f`）、`0xb00-0xb0f`，另含 `0x63…0xef` 各段、`0x4d0/0x4d1`、`0x40b`、`0x4d6`、`0xc00-0xc01`、`0xc14`、`0xc50-0xc51`、`0xc52`、`0xc6c`、`0xc6f`、`0xcd8-0xcdf`、`0x800-0x89f`、`0xb20-0xb3f`、`0x900-0x90f`、`0x910-0x91f` 及若干内存段。
+- `ACPI\PNP0C02\0` IO 资源仅 `0x290-0x29f` 与 `0x200-0x23f`。其余实例 `\14`（内存 `0x860000000-0x87fffffff`）、`\15`（`0xfff80000-0xffffffff`）无 IO 目标范围，`\8B`、`\8C` 无资源列出。目标范围无跨实例重复声明。
+- System 类无类级 UpperFilters；Secure Boot False；testsigning 未开启；无 HWiNFO/OpenHardwareMonitor/AIDA 等进程在跑。790B 驱动名沿用 2026-09-04 记录（oem14.inf）。
+- pnputil `/resources` 对两个目标实例打印 `Status: Stopped`，而 Get-PnpDevice 显示 OK：PNP0C02 由 machine.inf 提供、Enum 键无 Service 值，设备栈实际启动语义与“upper-filter 收到 PrepareHardware”是否成立仍待实验 B 验证。
+## 2026-09-05 实验 B 准备完成（等待重启验证）
+
+- 机主批准完整实验 B（含重启）。已新增脚本：`experiment-b-prep.ps1`（证书+签名+testsigning）、`experiment-b-verify.ps1`（重启后安装+restart 节点+QUERY_RESOURCE 验证）、`experiment-b-rollback.ps1`（卸载/清 UpperFilters/删服务/关 testsigning）。产物与日志在 `patch/windows/experiment-b-logs/`（已 gitignore，不入库）。
+- prep 已完成：创建并信任测试证书 `RAMFanTestSign`（Machine My/Root/TrustedPublisher）；从 `ramfan.inf.disabled` 生成含 `CatalogFile=ramfan.cat`、DriverVer 09/05/2026 的可安装 INF；Inf2Cat 生成 catalog（signability 无错误）；用 `/sm /s My` 对 catalog 与 `ramfan.sys` 签名成功；`bcdedit /set testsigning on` 已生效（Secure Boot False）。
+- 驱动额外提供只读 `IOCTL_RAMFAN_QUERY_RESOURCE`（0x803）：返回 SMBus/NCT/SIO 登记状态与基址快照，不访问任何端口；用于验证 upper-filter 在 `\700`/`\0` 收到 PrepareHardware 并登记资源（预期 SmbusReady=1、NctReady=1、SioReady=1、HwComplete=1、基址 0x0b00/0x0290/0x002e）。
+- 下一步：重启系统使 testsigning 生效，管理员运行 `experiment-b-verify.ps1`（安装驱动包、restart 两个目标节点、只读 QUERY_RESOURCE 与事件日志检查）；结果与回滚记录将写回本节。`FEED_ONCE` 在实验 B 全程保持阻断，不写 NCT。
+### 实验 B 进展（findings）
+
+- 路径 (a) 证伪：`pnputil /add-driver /install` 在无 function driver 的 PNP0C02 上失败（“function driver was not specified”），按预案切换到路径 (b) per-device UpperFilters。驱动包进入 DriverStore（oem6）会抢占 function 选择并导致 CM_PROB_REINSTALL(18)/0xC0000494，故安装方案改为：手动内核服务 RAMFanPnP（`%WinDir%\System32\drivers\ramfan.sys`）+ SetupAPI `SPDRP_UPPERFILTERS` 只绑 `\700`/`\0`，不保留含 Models 的 INF 包。
+- 测试签名加载：testsigning 开启后首次加载报错误 577（签名无法验证）。重新用 `/fd sha256 /ph`（页哈希）签名驱动后加载成功（RUNNING）。VBS/HVCI 均关闭。
+- 控制设备 IOCTL 全码返回 ERROR_INVALID_FUNCTION(1)：`EvtIoDeviceControl` 未收到任何 IRP。修复：创建串行队列后显式 `WdfDeviceConfigureRequestDispatching(device, ext->Queue, WdfRequestTypeDeviceControl)`（该 API 实参顺序为 Device/Queue/RequestType）；并新增 `EvtDriverUnload` 删除控制设备（此前驱动无法 `sc stop`，1052，无法热换驱动）。已重新构建并 `/ph` 签名 Release（21384B）。
+- 当前驱动（旧构建）仍在运行且无法卸载；系统需再重启一次以加载含修复的新驱动，随后运行 `experiment-b-verify.ps1` 完成 filter 挂载与 QUERY_RESOURCE 验证。节点目前处于干净状态（无 UpperFilters、无 DriverStore 残留、机器驱动恢复 machine.inf）。
+### 实验 B 决定性验证：开机栈构建
+
+- 已确认 `\0`/`\700` 的驱动实例为 machine.inf（System 类 0012/0013），**Service 为空**——无功能驱动 FDO，PnP upper filter 运行期加挂被静默忽略（与 `pnputil /install` 报“未指定 function driver”一致）。
+- IOCTL 分发修复已验证生效（`WdfDeviceConfigureRequestDispatching` 后 QUERY_RESOURCE 正常返回，驱动手动加载 RUNNING）。
+- 最后一环未验证：开机时 PnP 从注册表构建设备栈会读取 UpperFilters。当前 `\700`/`\0` 已绑定 `UpperFilters=RAMFanPnP`（REG_MULTI_SZ），驱动文件已 `/ph` 签名置于 `drivers\ramfan.sys`，服务 RAMFanPnP 为 demand。重启后检查：若服务被 PnP 自动启动且 QUERY_RESOURCE 返回 HwComplete=1（基址 0x0b00/0x0290/0x002e）则绑定路径可行；否则判定 PNP0C02 upper-filter 路径不可行并触发 WORKFLOW.md §7。
+### 实验 B 结论：PNP0C02 upper-filter 路径在本平台不可行（§7 触发记录）
+
+- 决定性负结果：`UpperFilters=RAMFanPnP` 在 `\700`/`\0` 就位后重启，开机栈构建仍未启动 RAMFanPnP（State=STOPPED）；手动 `sc start` 后驱动 RUNNING，但 QUERY_RESOURCE 全零——PnP 从未对两个节点调用 EvtDeviceAdd/PrepareHardware。节点无 problem code，仍为 machine.inf。
+- 根因：两个目标实例的驱动为 machine.inf（System 类 0012/0013）且 **Service 为空**（无功能驱动 FDO）。Windows 对无 function driver 的 legacy 设备不附加 upper filter（运行期 restart/disable-enable 与开机栈构建均不生效），与 `pnputil /install` 的“未指定 function driver”错误一致。这是平台固有属性，不是安装流程问题。
+- 影响与边界：资源持有节点无法承载 upper filter，原“两个 PNP0C02 upper-filter 持有 translated resources”的授权模型在此平台无法落地。按 WORKFLOW.md §7，不得以自声明端口方式绕过；FEED_ONCE 保持阻断，Windows 阶段 2 暂停于此，除非采用替代绑定模型（如把本驱动作为这两个节点的 function driver 安装——machine.inf 为空驱动，替换风险低，且 PrepareHardware 仍会收到该节点 translated resources，尚未验证）。
+- 已清理的实验副作用：UpperFilters 已从两个节点移除、RAMFanPnP 服务停止并删除、`System32\drivers\ramfan.sys` 删除、DriverStore 无 ramfan 包；节点恢复 machine.inf 干净状态。测试证书 RAMFanTestSign 与 testsigning 暂保留（为可能的 function-driver 验证与后续开发，须在交付前关闭并重启）。
+### 实验 C 结论与 §7 最终记录
+
+- function-driver 替换同样被系统拒绝：`pnputil /add-driver /install`（function INF）报“function driver was not specified”；`SetupDiSetSelectedDriver+DIF_INSTALLDEVICE`（单节点 \700）返回 GLE 1784；`UpdateDriverForPlugAndPlayDevicesW(ACPI\PNP0C02, fn.inf, FORCE)` 返回 0xE0000219。三路安装机制均不可用。
+- 失败尝试留下的副作用（ConfigFlags=0x20 REINSTALL、驱动关联丢失）已通过 remove-device+scan-devices 恢复：`\700`/`\0` 回到 machine.inf、ConfigFlags=0、无 problem。DriverStore 无 ramfan 包，RAMFanPnP 服务已删除，无 UpperFilters。
+- **§7 判定（Windows PnP 资源绑定路径在本平台不可行）**：PNP0C02 目标实例由 machine.inf 提供且无 Service（无功能驱动 FDO），系统既不让 upper filter 附加（运行期与开机栈构建均验证失败），也拒绝以第三方 function driver 替换（pnputil/SetupDi/UpdateDriver 三路拒绝）。据此：无法在“绑定 PnP 设备并持有 translated resources”的授权模型下获得 SMBus 0xb00 与 NCT 0x290 的访问；按 AGENTS 约束不得自声明端口或绕过签名策略。Windows 阶段 2 保持阻断暂停，FEED_ONCE 继续返回 RAMFAN_FEED_HW_UNAVAILABLE，不写 NCT。
+- 保留的有效改进（未提交）：控制设备 IOCTL 分发修复（`WdfDeviceConfigureRequestDispatching`，实测 QUERY_RESOURCE 返回正常）、`EvtDriverUnload` 删除控制设备、只读 `IOCTL_RAMFAN_QUERY_RESOURCE`、签名需 `/ph` 页哈希的发现、experiment-b-prep/rollback 脚本（通用签名/清理工具）。这些在继续 Windows 工作或改用其他访问模型时复用。
+- 系统状态：testsigning 仍为 on、测试证书 RAMFanTestSign 仍在（供可能的后续开发）；恢复出厂需 `experiment-b-rollback.ps1 -RemoveCert`（关闭 testsigning 后需重启生效）。实机验证命令与日志：`patch/windows/experiment-b-logs/`（gitignore）。
 ## 参考资料
 
 - `WORKFLOW.md`：Windows 当前实施和验收流程。

@@ -4,7 +4,7 @@
 
 - **Linux 0.1 已归档**：实现和完整 Linux 工作记录位于 `archive/0.1/linux/`；发布包仍在 `release/linux/`。
 - **当前工作目标**：实现 Windows KMDF 内核驱动 + Windows Service，持续向 NCT `Virtual_TEMP` 喂入 DIMM 温度。
-- **当前阶段**：机主已于 2026-09-05 批准**受控非 PnP 访问模型**实验例外。实机身份门禁首跑：NCT chip id 探针通过（`ChipId=d802 ChipIdValid=1`），但 PCI 探针 `ControllerFound=0`——`HalGetBusDataByOffset` 在此平台读不到 PCI 配置空间（790B 实为 bus0/dev20/func0 仍失败）。已改为读系统 PnP 枚举注册表 `Enum\PCI\VEN_1022&DEV_790B`（pci.sys 权威枚举，只读系统信息）；修正已编译待机主重启换驱动再验证。
+- **当前阶段**：机主已于 2026-09-05 批准**受控非 PnP 访问模型**实验例外。实机身份门禁两轮失败后修正：① `HalGetBusDataByOffset` 读不到 PCI 配置空间 → 改读 `Enum\PCI`；② `Enum\PCI` 下无裸 `VEN_1022&DEV_790B` 键（子键为完整 hardware id）→ 改为**枚举子键前缀匹配**。当前修正已编译、镜像自检通过，待机主再次重启换驱动验证。
 ## 根因与目标链路
 
 
@@ -286,10 +286,12 @@ outb((v & 0xf0) | page, 0x296)
 - 机主授权 agent 在本目标机直接执行（权限足够）。环境核查通过：管理员、Secure Boot False、testsigning on、证书 RAMFanTestSign 在、无监控进程。
 - `identity-gate-prep.ps1 -Configuration Release`：`/ph` 签名成功、复制到 System32\drivers、`sc create RAMFanPnP`（type=kernel, demand）并启动成功（RUNNING）。
 - **QUERY_HW 首跑结果：`SMBusBase=0x0000 ChipId=d802 ControllerFound=0 ChipIdValid=1 HwMatched=0`**。NCT chip id 探针工作正常（0x2e/0x2f 读写一致，chip id 0xd802），PCI 探针失败。
-- **根因**：790B 实机位置 bus0/device20/func0（`PCIROOT(0)#PCI(1400)`，DEVPKEY_Device_LocationInfo 确认），扫描范围覆盖它，但 `HalGetBusDataByOffset` 在此 x64 平台读不到 PCI 配置空间（legacy CF8/CFC 路径不可用，与现代 PCI MCFG/ECAM 枚举一致；审查 L4 已预警该风险，此为首次实机证实）。
-- **修正**：`hw.c` 的 `RamFanProbeFchSmbusController` 改为只读系统 PnP 枚举注册表 `HKLM\SYSTEM\CurrentControlSet\Enum\PCI\VEN_1022&DEV_790B`（键存在即 pci.sys 已权威枚举该设备；实机确认该键存在）。`SmbusBase` 在控制器存在时返回固定目标基址 `0xb00`（ACPI/历史证据值，明确非 PCI BAR 探测）。无端口访问新增。
-- **驱动卸载受阻**：旧二进制加载后 `sc stop` 返回 1052（无法卸载，SYSTEM32\drivers\ramfan.sys 被占用）。与实验 B 换驱动时一致，需要重启后加载新驱动。当前驱动只读且未写任何值，无风险。
-- **待办**：机主重启 → agent 重新执行 `identity-gate-prep.ps1` 验证修正（预期 `ChipId=d802 ControllerFound=1 HwMatched=1`）。
+- **根因（第一轮）**：790B 实机位置 bus0/device20/func0（`PCIROOT(0)#PCI(1400)`，DEVPKEY_Device_LocationInfo 确认），扫描范围覆盖它，但 `HalGetBusDataByOffset` 在此 x64 平台读不到 PCI 配置空间（legacy CF8/CFC 路径不可用，与现代 PCI MCFG/ECAM 枚举一致；审查 L4 已预警该风险，此为首次实机证实）。
+- **修正（第一轮）**：`hw.c` 改为只读注册表 `Enum\PCI\VEN_1022&DEV_790B`（键存在即已枚举）。重启后加载实测仍 `ControllerFound=0`。
+- **根因（第二轮）**：`Enum\PCI` 下不存在裸 `VEN_1022&DEV_790B` 键；子键是完整 hardware id `VEN_1022&DEV_790B&SUBSYS_07606688&REV_71`（用户态枚举确认只有该子键）。直接按裸前缀开键必然失败。
+- **修正（第二轮）**：`RamFanProbeFchSmbusController` 改为枚举 `Enum\PCI` 子键做 `VEN_1022&DEV_790B` 前缀匹配（`ZwQueryKey`+`ZwEnumerateKey`+`RtlPrefixUnicodeString`，被动池分配、逐项释放）。镜像自检 `test-enum-790b.ps1` 确认前缀匹配命中。
+- **驱动卸载受阻（两轮均同）**：已加载二进制 `sc stop` 返回 1052 无法卸载，SYSTEM32\drivers\ramfan.sys 被占用，需重启换驱动（与实验 B 换驱动经验一致）。驱动只读且未写任何值，无风险。
+- **待办**：机主再次重启 → agent 重新执行 `identity-gate-prep.ps1` 验证（预期 `ChipId=d802 ControllerFound=1 HwMatched=1`）。
 
 ## 参考资料
 

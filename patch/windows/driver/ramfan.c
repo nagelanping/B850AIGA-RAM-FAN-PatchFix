@@ -9,9 +9,11 @@
  * 阶段（§5.2）：
  *   - 第 1 步身份门禁（已实机验证）：IOCTL_RAMFAN_QUERY_HW：DEV_790B 存在性
  *     （Enum\PCI 前缀枚举）+ NCT chip id（0x2e/0x2f）判定 HwMatched。
- *   - 第 2 步受控 SMBus 读取：IOCTL_RAMFAN_READ_DIMM_TEMP 读全部候选 SPD 槽，
- *     空槽/失败语义由实验确认；仍不写 NCT。
- *   - FEED_ONCE（写回）保持阻断，需后续单独批准。
+ *   - 第 2 步受控 SMBus 读取（已实机验证）：READ_DIMM_TEMP 读全部候选 SPD 槽；
+ *     确认已装 0x53/0x51、空槽 0x52/0x50（BUS_ERR+0x06）。
+ *   - 第 3 步单次写回（2026-09-05 机主批准）：FEED_ONCE 读取→校验→最高温→
+ *     NCT page 0x0c/reg 0x36 写回并读回校验；页保存/恢复在 hw.c。
+ * 常驻 0.5s 喂值与 SCM 自动启动留后续阶段（需再批准）。
  */
 #include "ramfan.h"
 
@@ -178,8 +180,78 @@ RamFanReadDimmTemp(RAMFAN_READ_DIMM_OUT *out)
     return STATUS_SUCCESS;
 }
 
+/* ---- FEED_ONCE：读取全部候选槽 → 校验 → 最高温 → NCT 写回并读回校验（§5.2 第 3 步） ----
+ * 身份门禁不匹配（Status=3）时不返回槽数据、不做任何事务。
+ * 槽语义（第 2 步已实机确认）：OK=已装有效；BUS_ERR(0x04/0x06)=空槽可忽略；
+ * TIMEOUT=控制器忙或已装 DIMM 无响应（保守整体失败，不写）；BAD_DATA=读数越界异常。
+ * 局限（M1-1，常驻阶段收紧）：BUS_ERR 同时覆盖已装槽的 CRC/总线异常（LOG 已确认 0x04
+ * 不可区分），本函数把 BUS_ERR 一律当空槽忽略，若已装槽恰好 CRC 会用剩余槽喂值降速。
+ * 本机 6 轮实测已装恒 OK、空槽恒 BUS_ERR，风险边界明确；常驻阶段须在驱动内建立
+ * “已装地址映射”，映射内地址出现 BUS_ERR → 本轮整体失败。
+ * 无成功槽 → READ_FAILED 不写；写回读回不一致 → WRITE_FAILED。不写猜测值、不写 0°C。
+ * 调用方（EvtIoDeviceControl）在驱动锁/串行队列内。
+ */
+static NTSTATUS
+RamFanFeedOnce(RAMFAN_FEED_ONCE_OUT *out)
+{
+    RAMFAN_QUERY_HW_OUT hw;
+    RAMFAN_READ_DIMM_OUT rd;
+    UCHAR rb = 0;
+    UCHAR maxC = 0;
+    ULONG i;
+    NTSTATUS status;
 
-/* ---- 手动创建控制设备 ---- */
+    RtlZeroMemory(out, sizeof(*out));
+    for (i = 0; i < RAMFAN_SPD_ADDR_COUNT; i++) {
+        out->Slots[i].Status = RAMFAN_DIMM_UNCHECKED;
+    }
+
+    /* 身份门禁：不匹配 → HW_MISMATCH，零事务 */
+    status = RamFanQueryHw(&hw);
+    if (!NT_SUCCESS(status) || !hw.HwMatched) {
+        out->Status = RAMFAN_FEED_HW_MISMATCH;
+        return STATUS_SUCCESS;
+    }
+
+    /* 读取（RamFanReadDimmTemp 内部重复门禁 + 零事务保证；此处已过门禁才进入） */
+    status = RamFanReadDimmTemp(&rd);
+    if (!NT_SUCCESS(status)) {
+        out->Status = RAMFAN_FEED_READ_FAILED;
+        return STATUS_SUCCESS;
+    }
+    for (i = 0; i < RAMFAN_SPD_ADDR_COUNT; i++) {
+        out->Slots[i] = rd.Slots[i];
+    }
+
+    /* 校验：任何 TIMEOUT（已装无响应/控制器忙）或 BAD_DATA → 本轮整体失败，不写 */
+    for (i = 0; i < rd.Count; i++) {
+        UCHAR st = rd.Slots[i].Status;
+        if (st == RAMFAN_DIMM_TIMEOUT || st == RAMFAN_DIMM_BAD_DATA) {
+            out->Status = RAMFAN_FEED_READ_FAILED;
+            return STATUS_SUCCESS;
+        }
+        if (st == RAMFAN_DIMM_OK && rd.Slots[i].Celsius > maxC) {
+            maxC = rd.Slots[i].Celsius;
+        }
+    }
+    if (maxC == 0 && !rd.AnySuccess) {
+        out->Status = RAMFAN_FEED_READ_FAILED;
+        return STATUS_SUCCESS;
+    }
+
+    out->MaxCelsius = maxC;
+
+    /* 写回并读回校验（端口固定白名单 0x295/0x296；页保存/恢复在 hw.c） */
+    status = RamFanNctWriteVirtTemp(maxC, &rb);
+    out->WrittenCelsius = maxC;
+    out->ReadBackCelsius = rb;
+    if (!NT_SUCCESS(status)) {
+        out->Status = RAMFAN_FEED_WRITE_FAILED;
+        return STATUS_SUCCESS;
+    }
+    out->Status = RAMFAN_FEED_OK;
+    return STATUS_SUCCESS;
+}
 NTSTATUS
 RamFanCreateDevice(WDFDRIVER Driver)
 {
@@ -395,7 +467,10 @@ RamFanEvtIoDeviceControl(WDFQUEUE Queue,
             status = STATUS_BUFFER_TOO_SMALL;
             break;
         }
-        out.Status = RAMFAN_FEED_HW_UNAVAILABLE; /* 写回未批准 */
+        status = RamFanFeedOnce(&out);
+        if (!NT_SUCCESS(status)) {
+            break;
+        }
         status = WdfRequestRetrieveOutputBuffer(Request, sizeof(out),
                                                  &outBuffer, &outLen);
         if (!NT_SUCCESS(status)) {

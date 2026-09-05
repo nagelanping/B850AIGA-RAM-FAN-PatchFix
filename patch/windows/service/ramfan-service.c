@@ -2,9 +2,9 @@
  *
  *   - --identity：只读身份门禁检查（QUERY_HW，不访问 SMBus、不写 NCT）
  *   - --dimm：受控 SMBus 读取实验（READ_DIMM_TEMP，读全部候选槽并打印状态；不写 NCT）
- *   - --once / --install / --uninstall：当前仍拒绝（写回与 SCM 生命周期需后续批准）
+ *   - --once：单次写回（FEED_ONCE：读→校验→最高温→NCT Virtual_TEMP 写回，§5.2 第 3 步）
+ *   - --install / --uninstall：SCM 安装仍拒绝（验收后才启用）
  *   - 默认 SCM 模式启动时执行一次身份门禁检查；常驻 0.5s 喂值留到后续阶段
- *   - 服务/驱动模型：非 PnP 控制设备（2026-09-05 机主批准）
  *
  * 构建：MSVC，链接 advapi32（SCM）与 kernel32。
  * 包含共享定义：../driver/ramfan_ioctl.h
@@ -26,8 +26,8 @@ static SERVICE_STATUS         g_Status;
 static SERVICE_STATUS_HANDLE  g_StatusHandle = NULL;
 static HANDLE                 g_StopEvent = NULL;
 static volatile LONG          g_InstallDisabled = 1;
-static volatile LONG          g_FeedDisabled = 1;
-
+/* g_FeedDisabled 已删除：§5.2 第 3 步批准后 --once 写回启用；常驻 0.5s 喂值阶段
+   （需再批准）再引入独立的 SCM 生命周期开关 */
 /* ---- 日志（服务模式写文件；--once 同时输出 stdout） ---- */
 static void
 LogMessage(const char *fmt, ...)
@@ -152,14 +152,10 @@ RunReadDimm(void)
 
 
 
-/* ---- 写回：--once 执行一次完整喂值（写回步骤未批准前禁用） ---- */
+/* ---- 写回：--once 执行一次完整喂值（§5.2 第 3 步已批准） ---- */
 static int
 RunFeedOnce(void)
 {
-    if (g_FeedDisabled) {
-        LogMessage("FEED_ONCE 当前禁用（写回步骤未批准）；未连接驱动。");
-        return 1;
-    }
     HANDLE h;
     DWORD bytesReturned = 0;
     RAMFAN_FEED_ONCE_OUT feed = {0};
@@ -182,14 +178,19 @@ RunFeedOnce(void)
         return 1;
     }
 
-    for (i = 0; i < RAMFAN_SPD_ADDR_COUNT; i++) {
-        const RAMFAN_DIMM_RESULT *slot = &feed.Slots[i];
-        LogMessage("  DIMM 0x%02x: status=%u raw=0x%04x temp=%u°C",
-                   slot->Address, slot->Status, slot->Raw, slot->Celsius);
+    if (feed.Status != RAMFAN_FEED_HW_MISMATCH) {
+        for (i = 0; i < RAMFAN_SPD_ADDR_COUNT; i++) {
+            const RAMFAN_DIMM_RESULT *slot = &feed.Slots[i];
+            LogMessage("  DIMM 0x%02x: status=%u raw=0x%04x temp=%u°C hst=0x%02x",
+                       slot->Address, slot->Status, slot->Raw, slot->Celsius,
+                       slot->HstSts);
+        }
     }
     LogMessage("FEED_ONCE: status=%u max=%u°C written=%u°C readback=%u°C",
                feed.Status, feed.MaxCelsius, feed.WrittenCelsius,
                feed.ReadBackCelsius);
+    LogMessage("  状态: 0=OK(写回并读回一致) 1=读取失败未写 2=写入失败/读回不一致 "
+               "3=硬件不匹配");
 
     CloseHandle(h);
     return feed.Status == RAMFAN_FEED_OK ? 0 : 1;
@@ -249,8 +250,8 @@ ServiceMain(DWORD argc, LPWSTR *argv)
         return;
     }
 
-    /* 阶段 §5.2 第 1 步：启动时只做只读身份门禁检查；失败有限重试。
-       不执行 FEED_ONCE，不访问 SMBus 事务寄存器。 */
+    /* 启动时执行只读身份门禁检查；失败有限重试。当前 SCM 服务不做常驻喂值循环，
+       常驻 0.5s 喂值留后续阶段（需再批准）；单次写回用 --once 控制台模式验证。 */
     LogMessage("SERVICE START (identity gate check)");
     for (attempt = 0; attempt < 3; attempt++) {
         readStatus = RunIdentityGateCheck();
@@ -286,8 +287,7 @@ static int
 InstallService(void)
 {
     if (g_InstallDisabled) {
-        printf("SCM 用户态服务安装当前禁用（身份门禁阶段只允许驱动直接加载与 --identity）。\n");
-        return 1;
+        printf("SCM 用户态服务安装当前禁用（SCM 生命周期未批准；本阶段用驱动直接加载 + --identity/--dimm/--once 验证）。\n");
     }
     SC_HANDLE scm, svc;
     WCHAR path[MAX_PATH];
@@ -315,8 +315,7 @@ InstallService(void)
         svc = OpenServiceW(scm, RAMFAN_SERVICE_NAME, SERVICE_ALL_ACCESS);
     }
     if (svc != NULL) {
-        desc.lpDescription = (LPWSTR)L"RAMFan VirtualTEMP Feeder（受控试验；写回步骤未批准前 FEED_ONCE 阻断）";
-        ChangeServiceConfig2W(svc, SERVICE_CONFIG_DESCRIPTION, &desc);
+        desc.lpDescription = (LPWSTR)L"RAMFan VirtualTEMP Feeder（受控试验；§5.2 第 3 步单次写回已批准）";
         CloseServiceHandle(svc);
     }
     CloseServiceHandle(scm);

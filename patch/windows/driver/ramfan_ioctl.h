@@ -1,7 +1,6 @@
 #pragma once
 
-// ramfan_ioctl.h — 驱动与服务共享的 IOCTL 定义（身份门禁 + 后续写回步骤）
-// 用户态（服务）与内核态（驱动）都可包含，不依赖 ntddk.h/wdf.h。
+// ramfan_ioctl.h — 驱动与服务共享的 IOCTL 定义（身份门禁 + 受控读取 + 单次写回）
 // 所有常量来自 LOG.md 已确认事实，禁止改动温度源/曲线相关寄存器。
 
 #ifdef __cplusplus
@@ -90,7 +89,7 @@ typedef struct _RAMFAN_DIMM_RESULT {
 #define RAMFAN_DIMM_BAD_DATA    4
 #define RAMFAN_DIMM_UNCHECKED  5
 
-// ---- IOCTL（QUERY_HW 身份门禁与 READ_DIMM_TEMP 受控读取已启用；FEED_ONCE 未批准前保持阻断）----
+// ---- IOCTL（QUERY_HW / READ_DIMM_TEMP / FEED_ONCE 均已批准启用；见 LOG.md 2026-09-05）----
 #define RAMFAN_IOCTL_BASE FILE_DEVICE_UNKNOWN
 
 // 输出：身份门禁结果（只读探针；不访问 SMBus 事务寄存器、不写 NCT）
@@ -112,9 +111,9 @@ typedef struct _RAMFAN_READ_DIMM_OUT {
     RAMFAN_DIMM_RESULT Slots[RAMFAN_SPD_ADDR_COUNT];
 } RAMFAN_READ_DIMM_OUT;
 
-// ---- FEED_ONCE 输出（写回步骤未批准前不得写；状态 4=未授权）----
+// ---- FEED_ONCE 输出（§5.2 第 3 步已批准）----
 // Status: 0=成功写入并读回一致 1=读取失败未写 2=写入失败/读回不一致
-//         3=硬件不匹配 4=端口资源/访问模型未授权
+//         3=硬件不匹配
 typedef struct _RAMFAN_FEED_ONCE_OUT {
     unsigned char  Status;           // RAMFAN_FEED_* 值
     unsigned char  MaxCelsius;       // 本轮最高有效温度（读取全部成功时）
@@ -127,8 +126,7 @@ typedef struct _RAMFAN_FEED_ONCE_OUT {
 #define RAMFAN_FEED_READ_FAILED    1
 #define RAMFAN_FEED_WRITE_FAILED   2
 #define RAMFAN_FEED_HW_MISMATCH    3
-#define RAMFAN_FEED_HW_UNAVAILABLE 4
-
+/* 4=RAMFAN_FEED_HW_UNAVAILABLE 已废弃（受控模型已批准），不再引用 */
 
 #ifndef CTL_CODE
 #define CTL_CODE(DeviceType, Function, Method, Access) \

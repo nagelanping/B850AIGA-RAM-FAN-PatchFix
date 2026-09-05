@@ -29,3 +29,8 @@ NTSTATUS RamFanSmbusReadWord(USHORT base, UCHAR addr7, UCHAR cmd,
 
 /* 温度换算：((raw<<3)>>5)*25/100，返回 ULONG 供调用方做范围校验 */
 ULONG RamFanCelsiusFromRaw(USHORT raw);
+
+/* NCT Virtual_TEMP 写回（page 0x0c / reg 0x36，°C×1，§5.2 第 3 步）。
+ * 端口固定为白名单 0x295/0x296。写前保存当前页、成功或失败都尽力恢复；
+ * 读回不一致返回 STATUS_IO_DEVICE_ERROR。 */
+NTSTATUS RamFanNctWriteVirtTemp(UCHAR celsius, UCHAR *readBackOut);

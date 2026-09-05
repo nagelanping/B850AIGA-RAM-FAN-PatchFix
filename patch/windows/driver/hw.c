@@ -1,4 +1,4 @@
-/* hw.c — 只读身份探针 + 受控 SMBus 读取（§5.2 第 1/2 步）
+/* hw.c — 身份探针 + 受控 SMBus 读取 + NCT Virtual_TEMP 写回（§5.2 第 1/2/3 步）
  *
  * 2026-09-05 机主批准的非 PnP 受控模型内允许的硬件访问：
  *   - 系统 PnP 枚举（只读注册表）：确认 FCH SMBus VEN_1022&DEV_790B 存在。
@@ -7,7 +7,10 @@
  *   - 标准 SIO 0x2e/0x2f（白名单）：解锁→读 chip id（0x20/0x21）→锁定；
  *   - SMBus 事务寄存器（基址 0xb00，偏移 0x00..0x06）：§5.2 第 2 步批准，
  *     仅用于读取 SPD/DIMM 数据；必须由驱动内完整序列加锁执行。
- * 本文件不写 NCT 自定义端口 0x295/0x296，不写 NCT 目标寄存器（page 0x0c）。
+ *   - NCT 自定义端口 0x295/0x296（白名单）：§5.2 第 3 步批准，仅写 page
+ *     0x0c / reg 0x36（Virtual_TEMP），写前保存当前页、写后尽力恢复；
+ *     页选择保留高 4 位（仿固件 SkSmartFanCtrlPei 序列）。
+ * 不写 FAN5 曲线/模式/温度源（page 0x09），不写其它 NCT 寄存器。
  */
 #include "ramfan.h"
 
@@ -236,4 +239,58 @@ RamFanCelsiusFromRaw(USHORT raw)
 {
     ULONG scaled = ((ULONG)raw << 3) >> 5;
     return (scaled * 25) / 100;
+}
+
+/* ---- NCT Virtual_TEMP 写回（§5.2 第 3 步：单次写回） ----
+ * 只允许写 page 0x0c / reg 0x36（LOG.md 已确认：°C×1，例 0x1e=30°C）。
+ * 端口固定为白名单 0x295/0x296（NCT_SIO_IDX/DAT），无外部 base 参数。
+ * 序列（仿固件 SkSmartFanCtrlPei 页选择）：
+ *   1) 读当前页保存：outb(0x4e, 0x295); v=inb(0x296)  → 保存 v
+ *   2) 选页：outb(0x296, (v & 0xf0) | page)（保留高 4 位）
+ *   3) 写 reg 0x36 = celsius
+ *   4) 读回校验（重选页后读 reg 0x36）
+ *   5) 尽力恢复页：outb(0x296, saved)（成功或失败路径都尝试）
+ * 返回 STATUS_SUCCESS=写回并读回一致；STATUS_IO_DEVICE_ERROR=读回不一致。
+ * 不写 page 0x09（曲线/模式/温度源）或任何其它寄存器。
+ */
+NTSTATUS
+RamFanNctWriteVirtTemp(UCHAR celsius, UCHAR *readBackOut)
+{
+    PUCHAR idx = (PUCHAR)NCT_SIO_IDX;
+    PUCHAR dat = (PUCHAR)NCT_SIO_DAT;
+    UCHAR saved;
+    UCHAR rb;
+
+    if (readBackOut == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    *readBackOut = 0;
+
+    /* 1) 保存当前页（含高 4 位标志） */
+    WRITE_PORT_UCHAR(idx, 0x4e);
+    saved = READ_PORT_UCHAR(dat);
+
+    /* 2) 选页 0x0c，保留高 4 位 */
+    WRITE_PORT_UCHAR(idx, 0x4e);
+    WRITE_PORT_UCHAR(dat, (UCHAR)((saved & 0xf0) | (NCT_VIRT_TEMP_PAGE & 0x0f)));
+
+    /* 3) 写 reg 0x36 */
+    WRITE_PORT_UCHAR(idx, NCT_VIRT_TEMP_REG);
+    WRITE_PORT_UCHAR(dat, celsius);
+
+    /* 4) 读回校验：重选页后读 reg 0x36 */
+    WRITE_PORT_UCHAR(idx, 0x4e);
+    WRITE_PORT_UCHAR(dat, (UCHAR)((saved & 0xf0) | (NCT_VIRT_TEMP_PAGE & 0x0f)));
+    WRITE_PORT_UCHAR(idx, NCT_VIRT_TEMP_REG);
+    rb = READ_PORT_UCHAR(dat);
+    *readBackOut = rb;
+
+    /* 5) 尽力恢复原页（保存值含高 4 位，原样写回） */
+    WRITE_PORT_UCHAR(idx, 0x4e);
+    WRITE_PORT_UCHAR(dat, saved);
+
+    if (rb != celsius) {
+        return STATUS_IO_DEVICE_ERROR;
+    }
+    return STATUS_SUCCESS;
 }

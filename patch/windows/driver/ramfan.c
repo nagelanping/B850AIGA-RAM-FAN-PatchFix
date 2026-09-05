@@ -105,14 +105,18 @@ RamFanRegisterResources(WDFDEVICE Device, RAMFAN_PNP_CONTEXT *Context)
     WdfWaitLockAcquire(global->Lock, NULL);
 
     if (Context->Role == RAMFAN_ROLE_SMBUS) {
-        if (global->SmbusReady && global->SmbusDevice != Device) {
+        if (global->SmbusConflict) {
+            /* 资源所有权冲突在本次驱动生命周期内保持不可用。 */
+        } else if (global->SmbusReady && global->SmbusDevice != Device) {
             global->SmbusConflict = TRUE;
         } else {
             global->SmbusDevice = Device;
             global->SmbusReady = TRUE;
         }
     } else if (Context->Role == RAMFAN_ROLE_NCT) {
-        if (global->NctReady && global->NctDevice != Device) {
+        if (global->NctConflict) {
+            /* 资源所有权冲突在本次驱动生命周期内保持不可用。 */
+        } else if (global->NctReady && global->NctDevice != Device) {
             global->NctConflict = TRUE;
         } else {
             global->NctDevice = Device;
@@ -135,12 +139,12 @@ RamFanUnregisterResources(WDFDEVICE Device, RAMFAN_PNP_CONTEXT *Context)
         global->SmbusDevice == Device) {
         global->SmbusDevice = NULL;
         global->SmbusReady = FALSE;
-        global->SmbusConflict = FALSE;
+        /* 冲突一旦发生，本次驱动生命周期内不重新授权。 */
     } else if (Context->Role == RAMFAN_ROLE_NCT &&
                global->NctDevice == Device) {
         global->NctDevice = NULL;
         global->NctReady = FALSE;
-        global->NctConflict = FALSE;
+        /* 冲突一旦发生，本次驱动生命周期内不重新授权。 */
     }
 
     WdfWaitLockRelease(global->Lock);

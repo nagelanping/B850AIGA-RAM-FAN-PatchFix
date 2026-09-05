@@ -4,8 +4,9 @@
 
 - **Linux 0.1 已归档**：实现和完整 Linux 工作记录位于 `archive/0.1/linux/`；发布包仍在 `release/linux/`。
 - **当前工作目标**：实现 Windows KMDF 内核驱动 + Windows Service，持续向 NCT `Virtual_TEMP` 喂入 DIMM 温度。
-- **当前阶段**：Windows 阶段 2代码草稿（FEED_ONCE 写回闭环）已完成，Debug/Release 构建通过；独立审查发现写回安全门槛阻塞项，尚未提交或进行实机安装/写回验证。
+- **当前阶段**：Windows 阶段 2资源识别骨架已提交，尚未恢复 SMBus/NCT 访问；Debug/Release 构建通过。资源所有权、INF 绑定、catalog/签名和回滚仍未满足安装门槛。
 ## 根因与目标链路
+
 
 BIOS 将 `FAN5=MEM_FAN` 的温度源设置为 NCT6796D `Virtual_TEMP`（source `0x0a`）。该通道没有硬件数据，固件仅在 BIOS 打开内存风扇曲线页面时持续喂值；重启后 DXE/Setup 不再运行，温度值被清除，风扇回到约 941 rpm。
 
@@ -172,6 +173,10 @@ outb((v & 0xf0) | page, 0x296)
 - 当前骨架新增驱动级 wait-lock 和 SMBus/NCT 两个角色槽位：PrepareHardware 只登记唯一角色，ReleaseHardware 注销；重复角色标记冲突。该状态尚未用于硬件访问，FEED_ONCE 仍无条件阻断。
 - INF 已移除错误的关联功能驱动标志（`AddService` 不再使用 `SPSVCINST_ASSOCSERVICE`）；由于 catalog/签名和设备栈安装流程仍未完成，安装与卸载脚本均主动拒绝执行。
 - 用户态服务的 `--install/--uninstall` 入口也已在骨架阶段禁用，避免绕过 PowerShell 安全门直接修改 SCM；常规服务模式和 `--once` 仍未用于实机。
+- 为避免误用，INF 已暂存为 `patch/windows/driver/ramfan.inf.disabled`，构建脚本不再复制它；在绑定范围、catalog/签名和回滚完成前不生成可提交安装包。
+- 服务 `--once` 入口已在用户态代码中禁用，不再打开设备句柄；服务安装/卸载入口同样保持禁用。
+- 默认 SCM 服务模式仍保留阶段 2只读检查路径，会打开设备并调用只读 IOCTL；当前 `--once`、服务安装/卸载入口不会连接设备或修改 SCM。
+- 本轮修改后再次执行 `pwsh -File patch/windows/build.ps1 -Configuration Debug` 和 `Release`，驱动与服务均成功构建；构建脚本不再复制 `.inf.disabled`，并会删除对应配置输出目录中的旧 `ramfan.inf`。本轮 Debug/Release 输出目录已清理。
 - 下一步先修正上述软件架构和安装包问题，再安排只读 PnP 加载验证；在此之前不需要机主执行新的实机指令。
 ## 参考资料
 

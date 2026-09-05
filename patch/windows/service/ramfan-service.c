@@ -1,9 +1,6 @@
 /* ramfan-service.c — B850AIGA RAM-FAN Virtual_TEMP 补丁服务（阶段 2）
  *
- * 职责（WORKFLOW.md §3.3）：
- *   - SCM 生命周期：安装/卸载/启动/停止
- *   - 打开驱动设备，执行只读检查或一次 FEED_ONCE 写回
- *   - --once：单次写回并返回：成功 0、硬件/I/O 失败 1、参数错误 2
+ *   - --once、--install、--uninstall 当前拒绝；默认 SCM 模式仅执行阶段 2只读检查
  *   - 常驻 0.5s 喂值留到阶段 3，不接触裸端口
  *
  * 构建：MSVC，链接 advapi32（SCM）与 kernel32。
@@ -26,6 +23,7 @@ static SERVICE_STATUS         g_Status;
 static SERVICE_STATUS_HANDLE  g_StatusHandle = NULL;
 static HANDLE                 g_StopEvent = NULL;
 static volatile LONG          g_InstallDisabled = 1;
+static volatile LONG          g_FeedDisabled = 1;
 
 /* ---- 日志（服务模式写文件；--once 同时输出 stdout） ---- */
 static void
@@ -125,6 +123,10 @@ RunReadOnlyCycle(void)
 static int
 RunFeedOnce(void)
 {
+    if (g_FeedDisabled) {
+        LogMessage("当前资源识别骨架禁止 --once；未连接驱动。");
+        return 1;
+    }
     HANDLE h;
     DWORD bytesReturned = 0;
     RAMFAN_FEED_ONCE_OUT feed = {0};

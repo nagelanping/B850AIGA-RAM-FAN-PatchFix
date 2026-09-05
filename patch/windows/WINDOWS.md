@@ -11,13 +11,12 @@
 
 | 组件 | 文件 | 说明 |
 | ---- | ---- | ---- |
-| 内核驱动 | `driver/ramfan.c` | KMDF PnP upper-filter 骨架；绑定 `ACPI\PNP0C02`，只登记 translated port resources，不访问硬件 |
+| 内核驱动 | `driver/ramfan.c` | KMDF PnP upper-filter 骨架；绑定设计暂存于 `ramfan.inf.disabled`，只登记 translated port resources，不访问硬件 |
 | 共享定义 | `driver/ramfan_ioctl.h` | IOCTL 与资源识别范围常量 |
-| 用户态服务 | `service/ramfan-service.c` | SCM 生命周期、`--once`（当前仅调用受资源门禁的 FEED_ONCE） |
-| 构建 | `build.ps1` | 定位 VS/WDK，x64 Debug/Release，并复制 INF |
+| 用户态服务 | `service/ramfan-service.c` | `--once`、`--install`、`--uninstall` 当前拒绝；默认 SCM 模式仍只做阶段 2只读检查 |
+| 构建 | `build.ps1` | 定位 VS/WDK，x64 Debug/Release；不复制 INF |
 | 安装 | `install-test.ps1` | 当前主动拒绝安装，等待 INF/资源回调独立审查 |
-| 卸载 | `uninstall.ps1` | 仅保留历史非 PnP 清理脚本，当前不得用于骨架安装 |
-
+| 卸载 | `uninstall.ps1` | 当前主动拒绝卸载，避免沿用旧非 PnP 清理逻辑 |
 ## 资源收集（机主执行）
 
 `collect-resource-info.ps1` 只读查询 PnP 设备状态、资源属性和 `pnputil` 设备资源详情；不安装驱动、不访问 I/O port、不修改系统设置。资源模型实现前，先在目标机执行：
@@ -49,6 +48,7 @@ pwsh -File build.ps1 -Configuration Debug
 
 当前驱动已迁移为 PnP upper-filter 资源识别骨架，但 INF 绑定、PnP 回调生命周期和回滚流程尚未完成独立审查。为避免误改 `PNP0C02` 设备栈，`install-test.ps1` 当前会立即退出，不安装驱动、不修改 BCD、不注册服务。
 
+服务程序的 `--install` / `--uninstall` 入口也已禁用；当前不会通过任何入口修改 SCM。
 目标机当前只允许执行只读资源收集脚本；不要执行安装、启动驱动或 `--once`。
 
 ## 验证（当前禁止安装/加载）
@@ -67,7 +67,7 @@ pwsh -File build.ps1 -Configuration Debug
 
 ## 回滚（当前暂停）
 
-当前 `uninstall.ps1` 仍是历史非 PnP 清理脚本，不得用于当前 PnP 骨架；INF 安装和对应的 filter/catalog 回滚流程完成后再启用。
+当前 `uninstall.ps1` 会主动拒绝执行；它不会删除服务、驱动文件、注册表项或测试签名状态。INF 安装和对应的 filter/catalog 回滚流程完成后再启用。
 
 驱动停止/卸载不清除 NCT 最后一次写入值；不修改 BIOS、曲线或温度源。
 

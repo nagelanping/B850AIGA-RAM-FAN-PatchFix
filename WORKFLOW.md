@@ -52,9 +52,9 @@ WDM 仅在目标机无法使用 KMDF 时评估。禁止先实现 GUI、配置协
 ### 3.2 端口与 SMBus 实现要求
 
 1. 不要在代码中无条件假设 SMBus 基址永远是 `0xb00`。当前实机 `PCI\VEN_1022&DEV_790B` 没有列出 I/O resource，而 `ACPI\PNP0C02\700` 列出 `0x0b00-0x0b0f`。因此优先评估绑定 `ACPI\PNP0C02` 资源设备的 PnP upper-filter，在 `EvtDevicePrepareHardware` 收到 translated resource 后使用；`0xb00` 只作为当前已知诊断结果。
-2. SMBus 与 NCT 仍是独立资源范围，但当前证据显示它们都由不同的 `PNP0C02` 资源实例提供：`PNP0C02\700` 包含 `0x0b00-0x0b0f`，`PNP0C02\0` 包含 `0x0290-0x029f` 及 `0x0200-0x023f`。不能由一个实例的资源推断另一个实例的端口权限；upper-filter 必须按 `ResourcesTranslated` 中实际范围选择资源。
+2. SMBus、NCT 自定义 SIO 和标准 SIO 是独立资源范围。当前证据显示 `PNP0C02\700` 包含 `0x0b00-0x0b0f`，`PNP0C02\0` 包含 `0x0290-0x029f` 及 `0x0200-0x023f`；不能由一个实例的资源推断另一个实例的端口权限；upper-filter 必须按 `ResourcesTranslated` 中实际范围选择资源。
 2a. 当前非 PnP 控制设备没有 `EvtDevicePrepareHardware` 或 translated resource list。资源模型解决前，`FEED_ONCE` 必须在任何硬件访问前返回 `RAMFAN_FEED_HW_UNAVAILABLE`；不得安装测试或执行真实写回。
-2b. 标准 SIO `0x2e/0x2f` 也必须单独出现在合法 translated resource 中并完成身份访问验证；当前 `PNP0C02\0` 的 `0x0200-0x023f` 范围覆盖它，但仍需确认绑定和共享访问影响，不能直接据此启用探测。
+2b. 标准 SIO `0x2e/0x2f` 必须单独出现在合法 translated resource 中并完成身份访问验证；当前已知的 `0x0200-0x023f` 范围不包含 `0x002e/0x002f`，不能据此授权标准 SIO 探测。
 3. 每个 SPD 地址执行完整 HST word-read：清状态、写从地址读格式、写命令 `0x31`、启动 `0x4c`、轮询 BUSY、检查错误位、读取两个数据字节。
 4. BUSY 超时、`0x04` 或其他明确错误、非法 raw、换算结果不在 `0..120°C` 均视为该地址失败。
 5. 首轮先用 HWiNFO/只读 SMBus 结果建立“已安装 DIMM”与 SPD 地址的映射。空槽 NACK 不算故障；已安装地址的超时、总线错误或异常状态算该轮失败。只有所有已安装 DIMM 都成功才写 NCT；首版取最高值，不用剩余低温值降速。

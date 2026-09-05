@@ -3,7 +3,7 @@
  * 当前阶段只把 translated CmResourceTypePort 登记到 PnP 设备上下文：
  *   - SMBus 目标范围：0x0b00-0x0b0f
  *   - NCT 目标范围：0x0290-0x029f
- *   - 标准 SIO 资源范围：0x0200-0x023f
+ *   - 标准 SIO 资源范围：0x002e-0x002f
  * 不执行任何端口 I/O，不恢复 SMBus/NCT 事务，不解除 FEED_ONCE=4。
  * 控制设备仅保留 IOCTL 兼容入口；旧 hw.c 不再编译或调用。
  */
@@ -21,6 +21,10 @@ typedef struct _RAMFAN_PNP_CONTEXT {
     BOOLEAN SmbusPresent;
     BOOLEAN NctPresent;
     BOOLEAN StandardSioPresent;
+    BOOLEAN SmbusAmbiguous;
+    BOOLEAN NctAmbiguous;
+    BOOLEAN StandardSioAmbiguous;
+    BOOLEAN RegisteredReference;
     UCHAR Reserved;
     ULONG SmbusStart;
     ULONG SmbusLength;
@@ -37,6 +41,12 @@ typedef struct _RAMFAN_GLOBAL_CONTEXT {
     WDFWAITLOCK Lock;
     WDFDEVICE SmbusDevice;
     WDFDEVICE NctDevice;
+    ULONG SmbusStart;
+    ULONG SmbusLength;
+    ULONG NctStart;
+    ULONG NctLength;
+    ULONG StandardSioStart;
+    ULONG StandardSioLength;
     BOOLEAN SmbusReady;
     BOOLEAN NctReady;
     BOOLEAN SmbusConflict;
@@ -76,10 +86,42 @@ RamFanResourceContains(PCM_PARTIAL_RESOURCE_DESCRIPTOR Descriptor,
            start + Descriptor->u.Port.Length > targetEnd;
 }
 
-static VOID
+static BOOLEAN
+RamFanResourceOverlaps(PCM_PARTIAL_RESOURCE_DESCRIPTOR Descriptor,
+                       ULONG TargetStart,
+                       ULONG TargetLength)
+{
+    ULONGLONG start;
+    ULONGLONG end;
+    ULONGLONG targetEnd;
+
+    if (Descriptor->Type != CmResourceTypePort ||
+        Descriptor->u.Port.Length == 0 ||
+        Descriptor->u.Port.Start.QuadPart < 0) {
+        return FALSE;
+    }
+
+    start = (ULONGLONG)Descriptor->u.Port.Start.QuadPart;
+    if (start > MAXULONG ||
+        start > MAXULONGLONG - Descriptor->u.Port.Length ||
+        TargetLength == 0) {
+        return FALSE;
+    }
+
+    end = start + Descriptor->u.Port.Length - 1;
+    targetEnd = (ULONGLONG)TargetStart + TargetLength - 1;
+    if (targetEnd < TargetStart) {
+        return FALSE;
+    }
+
+    return start <= targetEnd && end >= TargetStart;
+}
+
+static BOOLEAN
 RamFanRememberPort(BOOLEAN *Present,
                    ULONG *Start,
                    ULONG *Length,
+                   BOOLEAN *Ambiguous,
                    ULONG TargetStart,
                    ULONG TargetLength)
 {
@@ -87,7 +129,11 @@ RamFanRememberPort(BOOLEAN *Present,
         *Present = TRUE;
         *Start = TargetStart;
         *Length = TargetLength;
+        return TRUE;
     }
+
+    *Ambiguous = TRUE;
+    return FALSE;
 }
 
 static VOID
@@ -109,18 +155,32 @@ RamFanRegisterResources(WDFDEVICE Device, RAMFAN_PNP_CONTEXT *Context)
             /* 资源所有权冲突在本次驱动生命周期内保持不可用。 */
         } else if (global->SmbusReady && global->SmbusDevice != Device) {
             global->SmbusConflict = TRUE;
+            global->SmbusReady = FALSE;
+            /* 保留 owner/ref，交由原 owner 的 ReleaseHardware 配对释放。 */
         } else {
             global->SmbusDevice = Device;
+            global->SmbusStart = Context->SmbusStart;
+            global->SmbusLength = Context->SmbusLength;
             global->SmbusReady = TRUE;
+            WdfObjectReference(Device);
+            Context->RegisteredReference = TRUE;
         }
     } else if (Context->Role == RAMFAN_ROLE_NCT) {
         if (global->NctConflict) {
             /* 资源所有权冲突在本次驱动生命周期内保持不可用。 */
         } else if (global->NctReady && global->NctDevice != Device) {
             global->NctConflict = TRUE;
+            global->NctReady = FALSE;
+            /* 保留 owner/ref，交由原 owner 的 ReleaseHardware 配对释放。 */
         } else {
             global->NctDevice = Device;
+            global->NctStart = Context->NctStart;
+            global->NctLength = Context->NctLength;
+            global->StandardSioStart = Context->StandardSioStart;
+            global->StandardSioLength = Context->StandardSioLength;
             global->NctReady = TRUE;
+            WdfObjectReference(Device);
+            Context->RegisteredReference = TRUE;
         }
     }
 
@@ -138,16 +198,27 @@ RamFanUnregisterResources(WDFDEVICE Device, RAMFAN_PNP_CONTEXT *Context)
     if (Context->Role == RAMFAN_ROLE_SMBUS &&
         global->SmbusDevice == Device) {
         global->SmbusDevice = NULL;
+        global->SmbusStart = 0;
+        global->SmbusLength = 0;
         global->SmbusReady = FALSE;
         /* 冲突一旦发生，本次驱动生命周期内不重新授权。 */
     } else if (Context->Role == RAMFAN_ROLE_NCT &&
                global->NctDevice == Device) {
         global->NctDevice = NULL;
+        global->NctStart = 0;
+        global->NctLength = 0;
+        global->StandardSioStart = 0;
+        global->StandardSioLength = 0;
         global->NctReady = FALSE;
         /* 冲突一旦发生，本次驱动生命周期内不重新授权。 */
     }
 
     WdfWaitLockRelease(global->Lock);
+
+    if (Context->RegisteredReference) {
+        Context->RegisteredReference = FALSE;
+        WdfObjectDereference(Device);
+    }
 }
 
 /* ---- DriverEntry（PnP upper-filter + 兼容控制设备） ---- */
@@ -233,38 +304,65 @@ RamFanEvtPrepareHardware(WDFDEVICE Device,
             continue;
         }
 
-        if (RamFanResourceContains(descriptor,
+        if (RamFanResourceOverlaps(descriptor,
                                    RAMFAN_SMBUS_RESOURCE_START,
-                                   RAMFAN_SMBUS_RESOURCE_LENGTH)) {
+                                   RAMFAN_SMBUS_RESOURCE_LENGTH) &&
+            !RamFanResourceContains(descriptor,
+                                    RAMFAN_SMBUS_RESOURCE_START,
+                                    RAMFAN_SMBUS_RESOURCE_LENGTH)) {
+            context->SmbusAmbiguous = TRUE;
+        } else if (RamFanResourceContains(descriptor,
+                                          RAMFAN_SMBUS_RESOURCE_START,
+                                          RAMFAN_SMBUS_RESOURCE_LENGTH)) {
             RamFanRememberPort(&context->SmbusPresent,
                                &context->SmbusStart, &context->SmbusLength,
+                               &context->SmbusAmbiguous,
                                RAMFAN_SMBUS_RESOURCE_START,
                                RAMFAN_SMBUS_RESOURCE_LENGTH);
         }
-        if (RamFanResourceContains(descriptor,
+        if (RamFanResourceOverlaps(descriptor,
                                    RAMFAN_NCT_RESOURCE_START,
-                                   RAMFAN_NCT_RESOURCE_LENGTH)) {
+                                   RAMFAN_NCT_RESOURCE_LENGTH) &&
+            !RamFanResourceContains(descriptor,
+                                    RAMFAN_NCT_RESOURCE_START,
+                                    RAMFAN_NCT_RESOURCE_LENGTH)) {
+            context->NctAmbiguous = TRUE;
+        } else if (RamFanResourceContains(descriptor,
+                                          RAMFAN_NCT_RESOURCE_START,
+                                          RAMFAN_NCT_RESOURCE_LENGTH)) {
             RamFanRememberPort(&context->NctPresent,
                                &context->NctStart, &context->NctLength,
+                               &context->NctAmbiguous,
                                RAMFAN_NCT_RESOURCE_START,
                                RAMFAN_NCT_RESOURCE_LENGTH);
         }
-        if (RamFanResourceContains(descriptor,
+        if (RamFanResourceOverlaps(descriptor,
                                    RAMFAN_STANDARD_SIO_RESOURCE_START,
-                                   RAMFAN_STANDARD_SIO_RESOURCE_LENGTH)) {
+                                   RAMFAN_STANDARD_SIO_RESOURCE_LENGTH) &&
+            !RamFanResourceContains(descriptor,
+                                    RAMFAN_STANDARD_SIO_RESOURCE_START,
+                                    RAMFAN_STANDARD_SIO_RESOURCE_LENGTH)) {
+            context->StandardSioAmbiguous = TRUE;
+        } else if (RamFanResourceContains(descriptor,
+                                          RAMFAN_STANDARD_SIO_RESOURCE_START,
+                                          RAMFAN_STANDARD_SIO_RESOURCE_LENGTH)) {
             RamFanRememberPort(&context->StandardSioPresent,
                                &context->StandardSioStart,
                                &context->StandardSioLength,
+                               &context->StandardSioAmbiguous,
                                RAMFAN_STANDARD_SIO_RESOURCE_START,
                                RAMFAN_STANDARD_SIO_RESOURCE_LENGTH);
         }
     }
 
-    if (context->SmbusPresent && !context->NctPresent &&
-        !context->StandardSioPresent) {
+    if (context->SmbusPresent && !context->SmbusAmbiguous &&
+        !context->NctAmbiguous && !context->StandardSioAmbiguous &&
+        !context->NctPresent && !context->StandardSioPresent) {
         context->Role = RAMFAN_ROLE_SMBUS;
-    } else if (context->NctPresent && context->StandardSioPresent &&
-               !context->SmbusPresent) {
+    } else if (context->NctPresent && !context->NctAmbiguous &&
+               context->StandardSioPresent &&
+               !context->StandardSioAmbiguous &&
+               !context->SmbusAmbiguous && !context->SmbusPresent) {
         context->Role = RAMFAN_ROLE_NCT;
     }
     RamFanRegisterResources(Device, context);

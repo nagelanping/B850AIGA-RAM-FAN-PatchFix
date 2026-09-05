@@ -157,14 +157,14 @@ outb((v & 0xf0) | page, 0x296)
 - 目标机只读脚本已执行成功；未安装驱动、未启动服务、未访问 I/O port。
 - `PCI\VEN_1022&DEV_790B&SUBSYS_07606688&REV_71\3&11583659&0&A0` 显示 AMD SMBUS，但 `pnputil /resources` 未列出 I/O resource。
 - `ACPI\PNP0C02\700` 显示 I/O `0x0010-0x001F`、`0x0022-0x003F` 等范围，并明确包含 `0x0B00-0x0B0F`；因此当前不能假设 PCI upper-filter 可获得 SMBus `0xb00`。
-- `ACPI\PNP0C02\0` 显示 I/O `0x0290-0x029F` 和 `0x0200-0x023F`；后者覆盖标准 SIO `0x2e/0x2f`。该实例使用 `machine.inf`，状态为 PnP Stopped / 查询状态 OK；能否安全挂 upper-filter、是否存在共享访问影响仍未确认。
+- `ACPI\PNP0C02\0` 显示 I/O `0x0290-0x029F` 和 `0x0200-0x023F`；这些范围不包含标准 SIO `0x002e/0x002f`，因此标准 SIO 的资源授权仍未确认。该实例使用 `machine.inf`，状态为 PnP Stopped / 查询状态 OK；能否安全挂 upper-filter、是否存在共享访问影响仍未确认。
 - `DEVPKEY_Device_ResourceList` 与 `DEVPKEY_Device_ResourceListTranslated` 的 PowerShell 属性查询返回“无效的参数”；`pnputil /resources` 提供了当前可读的端口范围证据。
 - 资源模型方向已从“PCI SMBus upper-filter + 独立 PNP0C02 NCT”修正为优先研究 `PNP0C02` 资源设备 upper-filter，并分别按 `0xb00` 与 `0x290` 资源实例建立上下文。
 
 ## 2026-09-04 PnP 资源识别骨架进度
 
 - 已将驱动初始化改为 KMDF PnP upper-filter 形态：`DriverEntry` 注册 `EvtDeviceAdd`，PnP 设备在 `EvtDevicePrepareHardware` 只解析 translated `CmResourceTypePort`，`EvtDeviceReleaseHardware` 清空上下文。
-- 当前骨架识别 `0x0b00-0x0b0f`、`0x0290-0x029f` 和 `0x0200-0x023f`，但还没有把两个资源实例连接到控制设备全局状态；`FEED_ONCE`、`QUERY_HW`、`READ_DIMM_TEMP` 均不访问硬件。
+- 当前骨架识别 `0x0b00-0x0b0f`、`0x0290-0x029f` 和标准 SIO `0x002e-0x002f`；当前已知 PNP0C02 资源尚未证明包含标准 SIO 范围，因此 NCT 角色仍不会获得合法授权；`FEED_ONCE`、`QUERY_HW`、`READ_DIMM_TEMP` 均不访问硬件。
 - `hw.c` 已从工程和调用链断开；没有 PCI 扫描、固定基址回退、SMBus/NCT 端口访问。
 - 新增 `ramfan.inf` 仅作为开发骨架，`install-test.ps1` 已主动拒绝执行，避免修改 `PNP0C02` 设备栈。当前禁止安装、加载、服务启动和 `--once`。
 - Debug/Release x64 驱动与服务构建通过；构建输出明确提示安装流程暂停。
@@ -178,6 +178,12 @@ outb((v & 0xf0) | page, 0x296)
 - 默认 SCM 服务模式仍保留阶段 2只读检查路径，会打开设备并调用只读 IOCTL；当前 `--once`、服务安装/卸载入口不会连接设备或修改 SCM。
 - 本轮修改后再次执行 `pwsh -File patch/windows/build.ps1 -Configuration Debug` 和 `Release`，驱动与服务均成功构建；构建脚本不再复制 `.inf.disabled`，并会删除对应配置输出目录中的旧 `ramfan.inf`。本轮 Debug/Release 输出目录已清理。
 - 下一步先修正上述软件架构和安装包问题，再安排只读 PnP 加载验证；在此之前不需要机主执行新的实机指令。
+## 2026-09-05 Windows 资源生命周期收敛
+
+- PnP 上下文现在拒绝目标范围的重复或部分重叠 port descriptor；只允许唯一、完整覆盖的目标资源进入角色识别。
+- 全局状态保存 SMBus/NCT/SIO 的固定资源快照，并对登记 owner 持有配对的 `WDFDEVICE` 引用；Prepare/Release 的登记与注销均受 wait-lock 保护。
+- 角色冲突会将对应 Ready 状态置为不可用，同时保留原 owner 的引用直到其 `ReleaseHardware` 配对释放；冲突在本次驱动生命周期内保持 sticky。
+- 以上状态仍未接入硬件访问；`FEED_ONCE`、`QUERY_HW`、`READ_DIMM_TEMP` 继续阻断，未安装、未访问真实端口。
 ## 参考资料
 
 - `WORKFLOW.md`：Windows 当前实施和验收流程。

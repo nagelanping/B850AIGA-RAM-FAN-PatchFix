@@ -1,0 +1,60 @@
+; ramfan.inf — PnP upper-filter resource-identification skeleton
+; Development testing only. This package does not enable SMBus/NCT I/O or FEED_ONCE.
+
+[Version]
+Signature="$WINDOWS NT$"
+Class=System
+ClassGuid={4d36e97d-e325-11ce-bfc1-08002be10318}
+Provider=%ProviderName%
+DriverVer=09/04/2026,0.2.0.0
+; Catalog/signing is intentionally not produced for this un-installable skeleton.
+
+[DestinationDirs]
+DriverCopyFiles=12
+
+[SourceDisksNames]
+1=%DiskName%,,,
+
+[SourceDisksFiles]
+ramfan.sys=1
+
+[Manufacturer]
+%ProviderName%=Standard,NTamd64
+
+[Standard.NTamd64]
+%DeviceDesc%=RAMFan_Install,ACPI\PNP0C02
+
+[RAMFan_Install.NT]
+CopyFiles=DriverCopyFiles
+
+[RAMFan_Install.NT.HW]
+AddReg=RAMFan_Install_AddReg
+
+[RAMFan_Install_AddReg]
+; Bind as an upper filter to the ACPI resource device. Do not replace its function driver.
+HKR,,UpperFilters,0x00010008,RAMFanPnP
+
+[RAMFan_Install.NT.Services]
+AddService=RAMFanPnP,0x00000000,RAMFanPnP_Service
+
+[RAMFan_Install.NT.Wdf]
+KmdfService=RAMFanPnP,RAMFanPnP_Wdf
+
+[RAMFanPnP_Service]
+DisplayName=%ServiceDesc%
+ServiceType=1
+StartType=3
+ErrorControl=1
+ServiceBinary=%12%\ramfan.sys
+
+[RAMFanPnP_Wdf]
+KmdfLibraryVersion=1.33
+
+[DriverCopyFiles]
+ramfan.sys
+
+[Strings]
+ProviderName="B850AIGA RAMFan development"
+DeviceDesc="RAMFan PnP resource identification filter (development only)"
+ServiceDesc="RAMFan PnP resource identification filter"
+DiskName="RAMFan development driver package"

@@ -25,6 +25,7 @@
 static SERVICE_STATUS         g_Status;
 static SERVICE_STATUS_HANDLE  g_StatusHandle = NULL;
 static HANDLE                 g_StopEvent = NULL;
+static volatile LONG          g_InstallDisabled = 1;
 
 /* ---- 日志（服务模式写文件；--once 同时输出 stdout） ---- */
 static void
@@ -248,6 +249,10 @@ ServiceMain(DWORD argc, LPWSTR *argv)
 static int
 InstallService(void)
 {
+    if (g_InstallDisabled) {
+        printf("当前 PnP 资源识别骨架禁止用户态服务安装。\n");
+        return 1;
+    }
     SC_HANDLE scm, svc;
     WCHAR path[MAX_PATH];
     SERVICE_DESCRIPTION desc;
@@ -286,6 +291,10 @@ InstallService(void)
 static int
 UninstallService(void)
 {
+    if (g_InstallDisabled) {
+        printf("当前 PnP 资源识别骨架禁止用户态服务卸载。\n");
+        return 1;
+    }
     SC_HANDLE scm, svc;
 
     scm = OpenSCManagerW(NULL, NULL, SC_MANAGER_ALL_ACCESS);
@@ -311,6 +320,7 @@ UninstallService(void)
     return 0;
 }
 
+/* 当前 PnP 骨架不允许用户态 SCM 安装/卸载入口修改系统。 */
 /* ---- main ---- */
 int
 main(int argc, char **argv)

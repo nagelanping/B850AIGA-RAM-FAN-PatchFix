@@ -27,7 +27,7 @@
     <DriverType>KMDF</DriverType>
     <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
     <KmdfVersion>1.33</KmdfVersion>
-    <!-- 遗留非 PnP 驱动使用非 Universal API（HalGetBusDataByOffset 等），目标平台为 Desktop -->
+    <!-- 当前仅使用 KMDF PnP/资源回调；保留 Desktop 目标以匹配本机 WDK 工具链。 -->
     <DriverTargetPlatform>Desktop</DriverTargetPlatform>
   </PropertyGroup>
 
@@ -75,12 +75,12 @@
 
   <ItemGroup>
     <ClCompile Include="ramfan.c" />
-    <ClCompile Include="hw.c" />
   </ItemGroup>
 
   <ItemGroup>
     <ClInclude Include="ramfan.h" />
     <ClInclude Include="ramfan_ioctl.h" />
+    <None Include="ramfan.inf" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

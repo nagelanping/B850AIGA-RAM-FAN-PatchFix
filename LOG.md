@@ -150,6 +150,29 @@ outb((v & 0xf0) | page, 0x296)
 - SMBus `HST_STS=0x04` 不再统一转换为 `STATUS_DEVICE_NOT_CONNECTED`；该状态可能是空槽 NACK 或 CRC/总线异常，当前按不确定数据错误处理，不能建立空槽映射或使用剩余样本降速。
 - 资源架构建议采用两个独立 PnP 设备：AMD SMBus PCI upper-filter 持有 SMBus translated resource；经确认可绑定的 `PNP0C02` 驱动单独持有 NCT translated resource。不能把两个资源合并，也不能由 PCI 资源授权 NCT 端口。
 - 阶段 2仍不提交；下一步是评估 AMD SMBus PCI upper-filter，并单独确认 NCT `0x295/0x296` 与标准 SIO `0x2e/0x2f` 的合法资源/身份访问模型。
+
+## 2026-09-04 实机 PnP 资源收集结果
+
+- 目标机只读脚本已执行成功；未安装驱动、未启动服务、未访问 I/O port。
+- `PCI\VEN_1022&DEV_790B&SUBSYS_07606688&REV_71\3&11583659&0&A0` 显示 AMD SMBUS，但 `pnputil /resources` 未列出 I/O resource。
+- `ACPI\PNP0C02\700` 显示 I/O `0x0010-0x001F`、`0x0022-0x003F` 等范围，并明确包含 `0x0B00-0x0B0F`；因此当前不能假设 PCI upper-filter 可获得 SMBus `0xb00`。
+- `ACPI\PNP0C02\0` 显示 I/O `0x0290-0x029F` 和 `0x0200-0x023F`；后者覆盖标准 SIO `0x2e/0x2f`。该实例使用 `machine.inf`，状态为 PnP Stopped / 查询状态 OK；能否安全挂 upper-filter、是否存在共享访问影响仍未确认。
+- `DEVPKEY_Device_ResourceList` 与 `DEVPKEY_Device_ResourceListTranslated` 的 PowerShell 属性查询返回“无效的参数”；`pnputil /resources` 提供了当前可读的端口范围证据。
+- 资源模型方向已从“PCI SMBus upper-filter + 独立 PNP0C02 NCT”修正为优先研究 `PNP0C02` 资源设备 upper-filter，并分别按 `0xb00` 与 `0x290` 资源实例建立上下文。
+
+## 2026-09-04 PnP 资源识别骨架进度
+
+- 已将驱动初始化改为 KMDF PnP upper-filter 形态：`DriverEntry` 注册 `EvtDeviceAdd`，PnP 设备在 `EvtDevicePrepareHardware` 只解析 translated `CmResourceTypePort`，`EvtDeviceReleaseHardware` 清空上下文。
+- 当前骨架识别 `0x0b00-0x0b0f`、`0x0290-0x029f` 和 `0x0200-0x023f`，但还没有把两个资源实例连接到控制设备全局状态；`FEED_ONCE`、`QUERY_HW`、`READ_DIMM_TEMP` 均不访问硬件。
+- `hw.c` 已从工程和调用链断开；没有 PCI 扫描、固定基址回退、SMBus/NCT 端口访问。
+- 新增 `ramfan.inf` 仅作为开发骨架，`install-test.ps1` 已主动拒绝执行，避免修改 `PNP0C02` 设备栈。当前禁止安装、加载、服务启动和 `--once`。
+- Debug/Release x64 驱动与服务构建通过；构建输出明确提示安装流程暂停。
+- 独立审查未通过，阻塞项包括：INF 的 upper-filter/AddService 语义与通配绑定范围、资源上下文尚未接入控制设备、catalog/签名流程、PnP 卸载回滚、旧服务/文档残留。
+- 资源范围判断已补充负地址、地址溢出和 64 位到 32 位截断防护；目标端口上下文保存为固定目标范围，不把聚合 descriptor 起始地址误作基址。
+- 当前骨架新增驱动级 wait-lock 和 SMBus/NCT 两个角色槽位：PrepareHardware 只登记唯一角色，ReleaseHardware 注销；重复角色标记冲突。该状态尚未用于硬件访问，FEED_ONCE 仍无条件阻断。
+- INF 已移除错误的关联功能驱动标志（`AddService` 不再使用 `SPSVCINST_ASSOCSERVICE`）；由于 catalog/签名和设备栈安装流程仍未完成，安装与卸载脚本均主动拒绝执行。
+- 用户态服务的 `--install/--uninstall` 入口也已在骨架阶段禁用，避免绕过 PowerShell 安全门直接修改 SCM；常规服务模式和 `--once` 仍未用于实机。
+- 下一步先修正上述软件架构和安装包问题，再安排只读 PnP 加载验证；在此之前不需要机主执行新的实机指令。
 ## 参考资料
 
 - `WORKFLOW.md`：Windows 当前实施和验收流程。

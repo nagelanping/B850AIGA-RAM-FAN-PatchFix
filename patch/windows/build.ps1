@@ -48,7 +48,10 @@ function Invoke-MsBuild([string]$Project) {
 Invoke-MsBuild (Join-Path $root 'driver\ramfan.vcxproj')
 Invoke-MsBuild (Join-Path $root 'service\ramfan-service.vcxproj')
 
+$driverOutput = Join-Path $root "driver\x64\$Configuration"
+Copy-Item (Join-Path $root 'driver\ramfan.inf') (Join-Path $driverOutput 'ramfan.inf') -Force
+
 Write-Host "`n构建完成。产物位于："
 Write-Host "  driver\x64\$Configuration\ramfan.sys"
 Write-Host "  service\x64\$Configuration\ramfan-service.exe"
-Write-Host "`n下一步：install-test.ps1（测试签名安装，需管理员）"
+Write-Host "`n当前仅生成未签名资源识别骨架；安装流程暂停，勿执行 install-test.ps1。"

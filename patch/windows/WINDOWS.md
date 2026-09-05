@@ -11,13 +11,24 @@
 
 | 组件 | 文件 | 说明 |
 | ---- | ---- | ---- |
-| 内核驱动 | `driver/ramfan.c` `driver/hw.c` | 非 PnP KMDF；`\Device\RamFanVirtTemp`；阶段 1 只读探测；阶段 2 写回暂被资源门禁阻断 |
-| 共享定义 | `driver/ramfan_ioctl.h` | IOCTL 与硬件常量（驱动/服务共用，来自 `LOG.md` 已确认事实） |
-| 用户态服务 | `service/ramfan-service.c` | SCM 生命周期、`--once`（当前仅调用受资源门禁的 FEED_ONCE）、日志 |
-| 构建 | `build.ps1` | 定位 VS/WDK，x64 Debug/Release |
-| 安装 | `install-test.ps1` | 测试签名安装，Secure Boot 检查，显式警告 |
-| 卸载 | `uninstall.ps1` | 停止/删除驱动与服务，回滚 |
+| 内核驱动 | `driver/ramfan.c` | KMDF PnP upper-filter 骨架；绑定 `ACPI\PNP0C02`，只登记 translated port resources，不访问硬件 |
+| 共享定义 | `driver/ramfan_ioctl.h` | IOCTL 与资源识别范围常量 |
+| 用户态服务 | `service/ramfan-service.c` | SCM 生命周期、`--once`（当前仅调用受资源门禁的 FEED_ONCE） |
+| 构建 | `build.ps1` | 定位 VS/WDK，x64 Debug/Release，并复制 INF |
+| 安装 | `install-test.ps1` | 当前主动拒绝安装，等待 INF/资源回调独立审查 |
+| 卸载 | `uninstall.ps1` | 仅保留历史非 PnP 清理脚本，当前不得用于骨架安装 |
 
+## 资源收集（机主执行）
+
+`collect-resource-info.ps1` 只读查询 PnP 设备状态、资源属性和 `pnputil` 设备资源详情；不安装驱动、不访问 I/O port、不修改系统设置。资源模型实现前，先在目标机执行：
+
+```powershell
+Set-Location .\patch\windows
+powershell.exe -NoProfile -File .\collect-resource-info.ps1 *> .\ramfan-resource-info.txt
+Get-Content .\ramfan-resource-info.txt
+```
+
+请将 `ramfan-resource-info.txt` 内容回传。重点需要确认 AMD SMBus 设备、各 `PNP0C02` 实例的 `/resources` 输出，以及是否存在覆盖 `0x0b00-0x0b0f`、`0x0290-0x029f` 或 `0x002e-0x002f` 的资源。脚本不读取 `DEVPKEY_Device_TranslatedResourceList`；`pnputil /resources` 是当前系统可用的只读证据。
 ## 前置条件
 
 - Windows 11 x64（10.0.26200 已验证），管理员 PowerShell。
@@ -34,36 +45,17 @@ pwsh -File build.ps1 -Configuration Debug
 
 产物：`driver\x64\Debug\ramfan.sys`、`service\x64\Debug\ramfan-service.exe`。
 
-## 安装（测试签名，开发测试版）
+## 安装（当前暂停）
 
-```powershell
-# 管理员 PowerShell
-pwsh -File install-test.ps1 -SignDriver -EnableTestSigning
-# 若提示测试签名未开启且已执行 -EnableTestSigning：重启后重跑（去掉 -EnableTestSigning）
-```
+当前驱动已迁移为 PnP upper-filter 资源识别骨架，但 INF 绑定、PnP 回调生命周期和回滚流程尚未完成独立审查。为避免误改 `PNP0C02` 设备栈，`install-test.ps1` 当前会立即退出，不安装驱动、不修改 BCD、不注册服务。
 
-脚本行为：
+目标机当前只允许执行只读资源收集脚本；不要执行安装、启动驱动或 `--once`。
 
-1. **拒绝在 Secure Boot 开启时安装**（不绕过签名策略）；本机 Secure Boot 当前为关闭。
-2. `-EnableTestSigning` 显式执行 `bcdedit /set testsigning on`（需重启，重启后重跑脚本）。
-3. 用自签名测试证书签名 `ramfan.sys`（`-SignDriver`），非 PnP 驱动用
-   `sc create RAMFanDriver type= kernel start= demand` 安装，无需 INF。
-4. 注册用户态服务 `RAMFan`（`SERVICE_DEMAND_START`；常驻喂值仍留阶段 3）。
+## 验证（当前禁止安装/加载）
 
-## 验证（阶段 2，资源模型解决前禁止执行）
+资源识别骨架和 INF 尚未完成独立审查，当前不执行安装、驱动启动、服务启动或 `--once`。只允许运行 `collect-resource-info.ps1`。
 
-按机主安排，项目大致完成后再安装驱动和执行写回验证。当前仅完成开发机编译，未执行 `install-test.ps1`、`sc start` 或任何真实 NCT 写入。
-
-```powershell
-sc start RAMFanDriver
-& "$env:ProgramFiles\RAMFan\ramfan-service.exe" --once
-```
-
-预期日志：
-
-```text
-FEED_ONCE: status=4 max=0°C written=0°C readback=0°C
-```
+当前版本无可执行验证命令；待 INF、资源共享状态和回滚流程完成后重新补充。
 
 验收点：
 
@@ -73,12 +65,9 @@ FEED_ONCE: status=4 max=0°C written=0°C readback=0°C
 - 对照历史 30°C/40°C 响应，确认 `pwm5/fan5` 单调变化；结束后重启确认 BIOS 曲线和温度源未改写。
 - 测试期间停止 HWiNFO/OpenHardwareMonitor 等会访问 SMBus/NCT 端口的工具。
 
-## 回滚
+## 回滚（当前暂停）
 
-```powershell
-pwsh -File uninstall.ps1
-# 可选：bcdedit /set testsigning off（重启生效）
-```
+当前 `uninstall.ps1` 仍是历史非 PnP 清理脚本，不得用于当前 PnP 骨架；INF 安装和对应的 filter/catalog 回滚流程完成后再启用。
 
 驱动停止/卸载不清除 NCT 最后一次写入值；不修改 BIOS、曲线或温度源。
 
@@ -86,14 +75,7 @@ pwsh -File uninstall.ps1
 
 - **外部并发**：标准 SIO `0x2e/0x2f` 与自定义口 `0x295/0x296` 是主板级共享端口。
   实机测试前停止 HWiNFO/OpenHardwareMonitor 等会访问这些端口的工具；驱动内部串行队列
-  只保证本驱动请求不交错，不能与其他程序自动原子化。
-- **只读诊断基址**：驱动优先扫描 FCH SMBus BAR；失败时使用已确认的 `0xb00` 作为诊断路径。
-  该值不是当前非 PnP 驱动的 translated resource，不能授权阶段 2 写回。
-- **资源模型未解决（当前硬阻塞）**：非 PnP 驱动没有 `EvtDevicePrepareHardware` 或
-  translated resource list。PCI/ACPI 证据不能授权本控制设备访问端口；独立 `PNP0C02` 的 NCT
-  端口也不能由 PCI SMBus 证据推断。当前 `FEED_ONCE` 在任何硬件访问前返回
-  `RAMFAN_FEED_HW_UNAVAILABLE`。后续应评估 AMD SMBus PCI upper-filter，并单独解决
-  NCT `0x295/0x296` 及标准 SIO `0x2e/0x2f` 的资源/身份访问模型。
+- **资源模型当前实现中**：驱动已改为 PnP upper-filter 骨架，只登记 `EvtDevicePrepareHardware` 收到的 translated port resources；旧 PCI 扫描、固定 `0xb00` 回退和硬件访问路径已断开。当前 `FEED_ONCE` 仍在任何硬件访问前返回 `RAMFAN_FEED_HW_UNAVAILABLE`。后续需完成资源共享状态、INF 安装和独立审查。
 - **SMBus `0x04` 语义未充分区分**：驱动不再把它统一当作空槽 NACK；遇到该状态时
   映射失败或已映射槽整轮失败，不得用剩余 DIMM 降速。
 - **失败保持旧值**：读取或写回失败时不写 0°C、不写猜测值；连续失败导致旧值过期是已知热安全风险。

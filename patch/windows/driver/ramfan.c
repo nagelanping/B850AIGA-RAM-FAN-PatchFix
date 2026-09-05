@@ -1,59 +1,164 @@
-/* ramfan.c — B850AIGA RAM-FAN Virtual_TEMP 补丁驱动（阶段 2）
+/* ramfan.c — B850AIGA RAM-FAN PnP 资源识别骨架
  *
- * 阶段 2 范围（WORKFLOW.md §4 阶段 2）：
- * 阶段 2范围（当前安全阻断）：
- *   - 保留 IOCTL_RAMFAN_FEED_ONCE 接口，但在资源模型解决前立即返回
- *     RAMFAN_FEED_HW_UNAVAILABLE，不访问 SMBus/NCT，不执行写回。
- *   - 服务常驻喂值留到阶段 3；禁止改写 BIOS、曲线或 page 0x09 温度源寄存器。
- *
- * 驱动模型：非 PnP 遗留内核驱动 + KMDF 对象。WdfDriverInitNonPnpDriver
- * 模式下 EvtDriverDeviceAdd 不会被调用，设备在 DriverEntry 中手动创建
- * （WdfControlDeviceInitAllocate + WdfDeviceCreate）。硬件访问顺序由串行队列
- * 保证本驱动内不交错；不能与外部硬件监控程序原子化。
+ * 当前阶段只把 translated CmResourceTypePort 登记到 PnP 设备上下文：
+ *   - SMBus 目标范围：0x0b00-0x0b0f
+ *   - NCT 目标范围：0x0290-0x029f
+ *   - 标准 SIO 资源范围：0x0200-0x023f
+ * 不执行任何端口 I/O，不恢复 SMBus/NCT 事务，不解除 FEED_ONCE=4。
+ * 控制设备仅保留 IOCTL 兼容入口；旧 hw.c 不再编译或调用。
  */
 #include "ramfan.h"
 
-/* ---- 设备扩展 ----
- * ponytail: 非 PnP 驱动没有 WDF 资源回调，阶段 1 只在请求时做硬件识别；
- * 阶段 2 若改绑 PnP 设备再迁移到 EvtDevicePrepareHardware。 */
+/* 控制设备上下文；它不拥有 PnP translated resources。 */
 typedef struct _RAMFAN_DEVICE_EXTENSION {
     WDFQUEUE Queue;
 } RAMFAN_DEVICE_EXTENSION;
 
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(RAMFAN_DEVICE_EXTENSION, RamFanGetDeviceContext);
 
-/* ---- 前置声明 ---- */
-DRIVER_INITIALIZE DriverEntry;
-EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL RamFanEvtIoDeviceControl;
-EVT_WDF_FILE_CLOSE RamFanEvtFileClose;
-NTSTATUS RamFanCreateDevice(WDFDRIVER Driver);
-EVT_WDF_DRIVER_UNLOAD RamFanEvtDriverUnload;
-/* hw.c 中实现 */
-NTSTATUS RamFanFindSmbusBase(USHORT *baseOut);
-NTSTATUS RamFanProbeNctChipId(UCHAR *hi, UCHAR *lo);
-NTSTATUS RamFanSmbusReadWord(USHORT base, UCHAR addr7, UCHAR cmd,
-                             USHORT *rawOut);
-ULONG    RamFanCelsiusFromRaw(USHORT raw);
+/* 每个 PNP0C02 过滤设备独立保存其实际 translated 资源命中情况。 */
+typedef struct _RAMFAN_PNP_CONTEXT {
+    BOOLEAN SmbusPresent;
+    BOOLEAN NctPresent;
+    BOOLEAN StandardSioPresent;
+    UCHAR Reserved;
+    ULONG SmbusStart;
+    ULONG SmbusLength;
+    ULONG NctStart;
+    ULONG NctLength;
+    ULONG StandardSioStart;
+    ULONG StandardSioLength;
+    UCHAR Role;
+} RAMFAN_PNP_CONTEXT;
 
-/* ---- SPD 7-bit 地址轮询顺序（LOG.md 已确认） ---- */
-static const UCHAR RamFanSpdAddrs[RAMFAN_SPD_ADDR_COUNT] = {
-    RAMFAN_SPD_ADDR_53, RAMFAN_SPD_ADDR_52,
-    RAMFAN_SPD_ADDR_51, RAMFAN_SPD_ADDR_50
-};
+WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(RAMFAN_PNP_CONTEXT, RamFanGetPnpContext);
 
-/* ---- DriverEntry（非 PnP：手动创建设备） ---- */
+typedef struct _RAMFAN_GLOBAL_CONTEXT {
+    WDFWAITLOCK Lock;
+    WDFDEVICE SmbusDevice;
+    WDFDEVICE NctDevice;
+    BOOLEAN SmbusReady;
+    BOOLEAN NctReady;
+    BOOLEAN SmbusConflict;
+    BOOLEAN NctConflict;
+} RAMFAN_GLOBAL_CONTEXT;
+
+WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(RAMFAN_GLOBAL_CONTEXT, RamFanGetGlobalContext);
+
+#define RAMFAN_ROLE_NONE  0
+#define RAMFAN_ROLE_SMBUS 1
+#define RAMFAN_ROLE_NCT   2
+
+static BOOLEAN
+RamFanResourceContains(PCM_PARTIAL_RESOURCE_DESCRIPTOR Descriptor,
+                       ULONG TargetStart,
+                       ULONG TargetLength)
+{
+    ULONGLONG start;
+    ULONGLONG targetEnd;
+
+    if (Descriptor->Type != CmResourceTypePort || Descriptor->u.Port.Length == 0) {
+        return FALSE;
+    }
+
+    if (Descriptor->u.Port.Start.QuadPart < 0) {
+        return FALSE;
+    }
+
+    start = (ULONGLONG)Descriptor->u.Port.Start.QuadPart;
+    targetEnd = (ULONGLONG)TargetStart + TargetLength - 1;
+    if (targetEnd < TargetStart || start > MAXULONG ||
+        start > MAXULONGLONG - Descriptor->u.Port.Length) {
+        return FALSE;
+    }
+
+    return start <= TargetStart &&
+           start + Descriptor->u.Port.Length > targetEnd;
+}
+
+static VOID
+RamFanRememberPort(BOOLEAN *Present,
+                   ULONG *Start,
+                   ULONG *Length,
+                   ULONG TargetStart,
+                   ULONG TargetLength)
+{
+    if (!*Present) {
+        *Present = TRUE;
+        *Start = TargetStart;
+        *Length = TargetLength;
+    }
+}
+
+static VOID
+RamFanResetPnpContext(RAMFAN_PNP_CONTEXT *Context)
+{
+    RtlZeroMemory(Context, sizeof(*Context));
+}
+
+static VOID
+RamFanRegisterResources(WDFDEVICE Device, RAMFAN_PNP_CONTEXT *Context)
+{
+    RAMFAN_GLOBAL_CONTEXT *global;
+
+    global = RamFanGetGlobalContext(WdfDeviceGetDriver(Device));
+    WdfWaitLockAcquire(global->Lock, NULL);
+
+    if (Context->Role == RAMFAN_ROLE_SMBUS) {
+        if (global->SmbusReady && global->SmbusDevice != Device) {
+            global->SmbusConflict = TRUE;
+        } else {
+            global->SmbusDevice = Device;
+            global->SmbusReady = TRUE;
+        }
+    } else if (Context->Role == RAMFAN_ROLE_NCT) {
+        if (global->NctReady && global->NctDevice != Device) {
+            global->NctConflict = TRUE;
+        } else {
+            global->NctDevice = Device;
+            global->NctReady = TRUE;
+        }
+    }
+
+    WdfWaitLockRelease(global->Lock);
+}
+
+static VOID
+RamFanUnregisterResources(WDFDEVICE Device, RAMFAN_PNP_CONTEXT *Context)
+{
+    RAMFAN_GLOBAL_CONTEXT *global;
+
+    global = RamFanGetGlobalContext(WdfDeviceGetDriver(Device));
+    WdfWaitLockAcquire(global->Lock, NULL);
+
+    if (Context->Role == RAMFAN_ROLE_SMBUS &&
+        global->SmbusDevice == Device) {
+        global->SmbusDevice = NULL;
+        global->SmbusReady = FALSE;
+        global->SmbusConflict = FALSE;
+    } else if (Context->Role == RAMFAN_ROLE_NCT &&
+               global->NctDevice == Device) {
+        global->NctDevice = NULL;
+        global->NctReady = FALSE;
+        global->NctConflict = FALSE;
+    }
+
+    WdfWaitLockRelease(global->Lock);
+}
+
+/* ---- DriverEntry（PnP upper-filter + 兼容控制设备） ---- */
 NTSTATUS
 DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 {
     WDF_DRIVER_CONFIG config;
     WDF_OBJECT_ATTRIBUTES attrs;
     WDFDRIVER driver;
+    RAMFAN_GLOBAL_CONTEXT *global;
     NTSTATUS status;
 
-    WDF_DRIVER_CONFIG_INIT(&config, NULL);
-    config.DriverInitFlags = WdfDriverInitNonPnpDriver;
-    config.EvtDriverUnload = RamFanEvtDriverUnload; /* 非 PnP 驱动必需 */
+    WDF_DRIVER_CONFIG_INIT(&config, RamFanEvtDeviceAdd);
     WDF_OBJECT_ATTRIBUTES_INIT(&attrs);
+    WDF_OBJECT_ATTRIBUTES_SET_CONTEXT_TYPE(&attrs, RAMFAN_GLOBAL_CONTEXT);
     status = WdfDriverCreate(DriverObject,
                              RegistryPath,
                              &attrs,
@@ -63,7 +168,115 @@ DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
         return status;
     }
 
+    global = RamFanGetGlobalContext(driver);
+    RtlZeroMemory(global, sizeof(*global));
+    WDF_OBJECT_ATTRIBUTES_INIT(&attrs);
+    attrs.ParentObject = driver;
+    status = WdfWaitLockCreate(&attrs, &global->Lock);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    /* 控制设备不承载端口资源；其 IOCTL 仍在安全阻断状态。 */
     return RamFanCreateDevice(driver);
+}
+
+/* ---- PnP 设备与 translated port resource 识别 ---- */
+NTSTATUS
+RamFanEvtDeviceAdd(WDFDRIVER Driver, PWDFDEVICE_INIT DeviceInit)
+{
+    WDF_PNPPOWER_EVENT_CALLBACKS pnpCallbacks;
+    WDF_OBJECT_ATTRIBUTES attrs;
+    WDFDEVICE device;
+
+    UNREFERENCED_PARAMETER(Driver);
+
+    WdfFdoInitSetFilter(DeviceInit);
+    WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&pnpCallbacks);
+    pnpCallbacks.EvtDevicePrepareHardware = RamFanEvtPrepareHardware;
+    pnpCallbacks.EvtDeviceReleaseHardware = RamFanEvtReleaseHardware;
+    WdfDeviceInitSetPnpPowerEventCallbacks(DeviceInit, &pnpCallbacks);
+
+    WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attrs, RAMFAN_PNP_CONTEXT);
+    return WdfDeviceCreate(&DeviceInit, &attrs, &device);
+}
+
+NTSTATUS
+RamFanEvtPrepareHardware(WDFDEVICE Device,
+                         WDFCMRESLIST ResourcesRaw,
+                         WDFCMRESLIST ResourcesTranslated)
+{
+    RAMFAN_PNP_CONTEXT *context;
+    ULONG descriptorIndex;
+
+    UNREFERENCED_PARAMETER(ResourcesRaw);
+
+    context = RamFanGetPnpContext(Device);
+    RamFanUnregisterResources(Device, context);
+    RamFanResetPnpContext(context);
+    if (ResourcesTranslated == NULL) {
+        return STATUS_SUCCESS;
+    }
+
+    for (descriptorIndex = 0;
+         descriptorIndex < WdfCmResourceListGetCount(ResourcesTranslated);
+         descriptorIndex++) {
+        PCM_PARTIAL_RESOURCE_DESCRIPTOR descriptor;
+
+        descriptor = WdfCmResourceListGetDescriptor(ResourcesTranslated,
+                                                    descriptorIndex);
+        if (descriptor == NULL || descriptor->Type != CmResourceTypePort) {
+            continue;
+        }
+
+        if (RamFanResourceContains(descriptor,
+                                   RAMFAN_SMBUS_RESOURCE_START,
+                                   RAMFAN_SMBUS_RESOURCE_LENGTH)) {
+            RamFanRememberPort(&context->SmbusPresent,
+                               &context->SmbusStart, &context->SmbusLength,
+                               RAMFAN_SMBUS_RESOURCE_START,
+                               RAMFAN_SMBUS_RESOURCE_LENGTH);
+        }
+        if (RamFanResourceContains(descriptor,
+                                   RAMFAN_NCT_RESOURCE_START,
+                                   RAMFAN_NCT_RESOURCE_LENGTH)) {
+            RamFanRememberPort(&context->NctPresent,
+                               &context->NctStart, &context->NctLength,
+                               RAMFAN_NCT_RESOURCE_START,
+                               RAMFAN_NCT_RESOURCE_LENGTH);
+        }
+        if (RamFanResourceContains(descriptor,
+                                   RAMFAN_STANDARD_SIO_RESOURCE_START,
+                                   RAMFAN_STANDARD_SIO_RESOURCE_LENGTH)) {
+            RamFanRememberPort(&context->StandardSioPresent,
+                               &context->StandardSioStart,
+                               &context->StandardSioLength,
+                               RAMFAN_STANDARD_SIO_RESOURCE_START,
+                               RAMFAN_STANDARD_SIO_RESOURCE_LENGTH);
+        }
+    }
+
+    if (context->SmbusPresent && !context->NctPresent &&
+        !context->StandardSioPresent) {
+        context->Role = RAMFAN_ROLE_SMBUS;
+    } else if (context->NctPresent && context->StandardSioPresent &&
+               !context->SmbusPresent) {
+        context->Role = RAMFAN_ROLE_NCT;
+    }
+    RamFanRegisterResources(Device, context);
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+RamFanEvtReleaseHardware(WDFDEVICE Device, WDFCMRESLIST ResourcesTranslated)
+{
+    RAMFAN_PNP_CONTEXT *context;
+
+    UNREFERENCED_PARAMETER(ResourcesTranslated);
+    context = RamFanGetPnpContext(Device);
+    RamFanUnregisterResources(Device, context);
+    RamFanResetPnpContext(context);
+    return STATUS_SUCCESS;
 }
 
 /* ---- 手动创建控制设备 ---- */
@@ -142,11 +355,9 @@ RamFanFeedOnce(RAMFAN_DEVICE_EXTENSION *ext,
                 RAMFAN_FEED_ONCE_OUT *out)
 {
     /*
-     * 当前仍是非 PnP 控制设备：没有 EvtDevicePrepareHardware，也没有
-     * translated resource list。PCI BAR/ACPI _CRS 证据不能授权本设备访问
-     * 端口，尤其不能授权独立 PNP0C02 的 NCT 端口。
-     *
-     * 资源模型解决前，FEED_ONCE 必须在任何硬件访问前失败，绝不写 NCT。
+     * 当前为 PnP 资源识别骨架；FEED_ONCE 尚未接入资源上下文。
+     * translated resources 只做登记，旧 hw.c 访问路径已断开；绝不在此阶段访问端口或写 NCT。
+     * 资源模型和后续硬件闭环未完成时，FEED_ONCE 必须在任何硬件访问前失败。
      */
     UNREFERENCED_PARAMETER(ext);
     out->Status = RAMFAN_FEED_HW_UNAVAILABLE;
@@ -170,105 +381,11 @@ RamFanEvtIoDeviceControl(WDFQUEUE Queue,
     UNREFERENCED_PARAMETER(InputBufferLength);
 
     switch (IoControlCode) {
-    case IOCTL_RAMFAN_QUERY_HW: {
-        RAMFAN_QUERY_HW_OUT out = {0};
-        USHORT base = 0;
-        UCHAR hi = 0, lo = 0;
-
-        if (OutputBufferLength < sizeof(out)) {
-            status = STATUS_BUFFER_TOO_SMALL;
-            break;
-        }
-
-        status = RamFanFindSmbusBase(&base);
-        if (NT_SUCCESS(status)) {
-            out.SmbusBase = base;
-        } else {
-            out.SmbusBase = 0;
-        }
-
-        status = RamFanProbeNctChipId(&hi, &lo);
-        if (NT_SUCCESS(status)) {
-            out.ChipIdHi = hi;
-            out.ChipIdLo = lo;
-        } else {
-            out.ChipIdHi = 0;
-            out.ChipIdLo = 0;
-        }
-
-        out.HwMatched =
-            (out.SmbusBase != 0) &&
-            (out.ChipIdHi == NCT_EXPECTED_CHIP_ID_HI) &&
-            (out.ChipIdLo == NCT_EXPECTED_CHIP_ID_LO);
-
-        status = WdfRequestRetrieveOutputBuffer(Request, sizeof(out),
-                                                &outBuffer, &outLen);
-        if (!NT_SUCCESS(status)) {
-            break;
-        }
-        RtlCopyMemory(outBuffer, &out, sizeof(out));
-        WdfRequestSetInformation(Request, sizeof(out));
-        status = STATUS_SUCCESS;
+    case IOCTL_RAMFAN_QUERY_HW:
+    case IOCTL_RAMFAN_READ_DIMM_TEMP:
+        /* 旧 hw.c 的 PCI/SIO/SMBus 访问路径已从本驱动断开。 */
+        status = STATUS_DEVICE_NOT_READY;
         break;
-    }
-
-    case IOCTL_RAMFAN_READ_DIMM_TEMP: {
-        RAMFAN_READ_DIMM_OUT out = {0};
-        USHORT base = 0;
-        UCHAR i;
-
-        if (OutputBufferLength < sizeof(out)) {
-            status = STATUS_BUFFER_TOO_SMALL;
-            break;
-        }
-
-        /* 基址每次现查，避免依赖启动顺序 */
-        status = RamFanFindSmbusBase(&base);
-        if (!NT_SUCCESS(status)) {
-            status = STATUS_DEVICE_NOT_READY;
-            break;
-        }
-
-        out.Count = RAMFAN_SPD_ADDR_COUNT;
-        for (i = 0; i < RAMFAN_SPD_ADDR_COUNT; i++) {
-            RAMFAN_DIMM_RESULT *slot = &out.Slots[i];
-            USHORT raw;
-            NTSTATUS rd;
-
-            slot->Address = RamFanSpdAddrs[i];
-            rd = RamFanSmbusReadWord(base, slot->Address, SPD_CMD_TEMP, &raw);
-            if (NT_SUCCESS(rd)) {
-                ULONG c = RamFanCelsiusFromRaw(raw); /* ULONG：校验先于截断 */
-                if (c > RAMFAN_TEMP_MAX) { /* ULONG 域校验：0..120 之外判非法 */
-                    slot->Status = RAMFAN_DIMM_BAD_DATA;
-                } else {
-                    slot->Status = RAMFAN_DIMM_OK;
-                    slot->Raw = raw;
-                    slot->Celsius = (UCHAR)c; /* 已通过 0..120 校验，截断安全 */
-                    out.AnySuccess = TRUE;
-                    if (c > out.MaxCelsius) {
-                        out.MaxCelsius = (UCHAR)c;
-                    }
-                }
-            } else if (rd == STATUS_DEVICE_NOT_CONNECTED) {
-                slot->Status = RAMFAN_DIMM_NACK; /* 空槽，不算失败 */
-            } else if (rd == STATUS_IO_TIMEOUT) {
-                slot->Status = RAMFAN_DIMM_TIMEOUT;
-            } else {
-                slot->Status = RAMFAN_DIMM_BUS_ERR;
-            }
-        }
-
-        status = WdfRequestRetrieveOutputBuffer(Request, sizeof(out),
-                                                &outBuffer, &outLen);
-        if (!NT_SUCCESS(status)) {
-            break;
-        }
-        RtlCopyMemory(outBuffer, &out, sizeof(out));
-        WdfRequestSetInformation(Request, sizeof(out));
-        status = STATUS_SUCCESS;
-        break;
-    }
 
     case IOCTL_RAMFAN_FEED_ONCE: {
         RAMFAN_FEED_ONCE_OUT out = {0};
@@ -311,14 +428,6 @@ RamFanEvtIoDeviceControl(WDFQUEUE Queue,
     /* 成功路径已 SetInformation；此处仅完成请求 */
     WdfRequestComplete(Request, status);
 }
-/* ---- 驱动卸载（非 PnP 驱动必需回调） ---- */
-VOID
-RamFanEvtDriverUnload(WDFDRIVER Driver)
-{
-    /* WDF 自动清理设备对象/队列；此处仅作钩子，无自定义资源 */
-    UNREFERENCED_PARAMETER(Driver);
-}
-
 /* ---- 文件/设备清理 ---- */
 VOID
 RamFanEvtFileClose(WDFFILEOBJECT FileObject)

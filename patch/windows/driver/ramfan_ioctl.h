@@ -16,7 +16,15 @@ extern "C" {
 #define RAMFAN_DOS_DEVICE_NAME L"\\DosDevices\\RamFanVirtTemp"
 #define RAMFAN_WIN32_DEVICE    L"\\\\.\\RamFanVirtTemp"
 
-// ---- SMBus HST 寄存器偏移（基址由 PCI/ACPI 资源确认，预期 0xb00）----
+// ---- PnP translated resource identification ranges (read-only skeleton) ----
+#define RAMFAN_SMBUS_RESOURCE_START       0x0b00
+#define RAMFAN_SMBUS_RESOURCE_LENGTH      0x10
+#define RAMFAN_NCT_RESOURCE_START         0x0290
+#define RAMFAN_NCT_RESOURCE_LENGTH        0x10
+#define RAMFAN_STANDARD_SIO_RESOURCE_START  0x0200
+#define RAMFAN_STANDARD_SIO_RESOURCE_LENGTH 0x40
+
+// ---- SMBus HST 寄存器偏移（基址由 PnP/ACPI 资源确认）----
 #define HST_STS_OFF   0x00
 #define HST_CNT_OFF   0x02
 #define HST_CMD_OFF   0x03

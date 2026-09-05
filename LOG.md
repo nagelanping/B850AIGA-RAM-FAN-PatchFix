@@ -4,7 +4,7 @@
 
 - **Linux 0.1 已归档**：实现和完整 Linux 工作记录位于 `archive/0.1/linux/`；发布包仍在 `release/linux/`。
 - **当前工作目标**：实现 Windows KMDF 内核驱动 + Windows Service，持续向 NCT `Virtual_TEMP` 喂入 DIMM 温度。
-- **当前阶段**：§5.2 第 1 步身份门禁已实机验证通过；机主于 2026-09-05 批准 **§5.2 第 2 步受控 SMBus 试验**（读 DIMM，允许驱动写 SMBus 事务寄存器 `0xb00` 偏移 0x00..0x06）。驱动已实现 `READ_DIMM_TEMP`（逐槽 word-read 0x53/0x52/0x51/0x50，命令 0x31，温度 0..120 校验），待实机运行确认空槽/失败语义。`FEED_ONCE`（写 NCT）保持阻断。
+- **当前阶段**：§5.2 第 1 步身份门禁与 §5.2 第 2 步受控 SMBus 读取均已实机验证通过。实机确认已装 DIMM 为 `0x53`（36°C）与 `0x51`（33°C），空槽 `0x52`/`0x50` 呈 BUS_ERR+HstSts `0x06`；6 轮重复读取稳定。修正先前"0x53/0x52 已装"的假设（实际为 0x53+0x51）。`FEED_ONCE`（写 NCT）保持阻断，需机主批准 §5.2 第 3 步。
 ## 根因与目标链路
 
 
@@ -94,7 +94,7 @@ outb((v & 0xf0) | page, 0x296)
 
 - **OS**：Windows 11 专业工作站版 10.0.26200 (build 26200)，x64。
 - **Secure Boot**：当前 **False**（与 WORKFLOW 默认前提相反，已记录；测试签名驱动可用于开发测试，无需改 BIOS）。
-- **内存**：2×16GB DDR5-5600（DIMM1 P0 CHANNEL A / B），对应 SPD 7-bit 地址 `0x53/0x52` 两个已装槽。
+- **内存**：2×16GB DDR5-5600（DIMM1 P0 CHANNEL A / B）。**地址映射实机修正（2026-09-05 §5.2 第 2 步）**：已装 DIMM 对应 SPD 7-bit 地址 `0x53` 与 `0x51`（本记录原假设 `0x53/0x52` 有误），空槽为 `0x50`/`0x52`。
 - **SMBus 控制器**：`PCI\VEN_1022&DEV_790B`（AMD FCH SMBus，rev 71），驱动 oem14.inf，状态 OK。
 - **SMBus 基址证据**：ACPI `PNP0C02\700` 声明 IO `0xb00-0xb0f`（与 Linux 实测 `0xb00` 一致）。
 - **NCT 端口证据**：`0x295/0x296` 落在 ACPI `PNP0C02\0` 声明的 `0x290-0x29F` 范围内，访问模型有 ACPI 背书。
@@ -303,7 +303,9 @@ outb((v & 0xf0) | page, 0x296)
 - **服务**：新增 `--dimm` 控制台模式逐槽打印 Address/Status/Raw/Celsius/HstSts；`--once`/`--install`/`--uninstall` 仍拒绝。
 - **验证**：Debug/Release x64 构建通过；`test-smbus-model.ps1` 新增 `0x06`（0x02|0x04）判错误与 `0x00`→Unknown 断言，与 Linux 实机证据（0x53/0x51→0x02 成功，0x52/0x50→0x06）一致；identity/enum 自检全绿。
 - **子代理独立审查**：无严重代码缺陷。修复项：S1 授权记录同步（本文档/WORKFLOW/AGENTS 补第 2 步批准口径）；L1/L2 过时注释（ramfan.c/ioctl.h 头注释与 SmbusBase 字段）；L3/L6 服务日志字符串参数与身份被拒提示；L4 测试 0x00 语义；L5 NACK 值注释澄清（保留给写回阶段）；M1 记录恢复失败 sticky 语义与串行队列依赖（注释）。
-- **下一步（实机）**：机主/agent 执行 `identity-gate-prep.ps1` 加载驱动后运行 `ramfan-service.exe --dimm`，记录 4 槽状态：已装 DIMM（实机为 2×16GB，预计 `0x53/0x52`）应 OK 且有温度，空槽（`0x51/0x50`）应呈现 NACK/BUS_ERR+`HstSts=0x06`；确认后写回 LOG，再经批准进入单次写回（§5.2 第 3 步）。
+- **实机结果（§5.2 第 2 步，agent 在目标机执行）**：加载驱动后 `ramfan-service.exe --dimm` 六轮输出一致——`0x53` OK raw=0x24c→36°C hst=0x02；`0x51` OK raw=0x210→33°C hst=0x02；`0x52`/`0x50` BUS_ERR raw=0 hst=0x06（0x02|0x04）。
+- **结论**：① 已装 DIMM 地址实为 `0x53`+`0x51`（修正先前假设 0x53/0x52，与 archive Linux 阶段 B 实测 0x53/0x51→0x02 成功模式一致）；② 空槽语义：HST_STS=0x06（含 0x04 无设备位）→ 驱动 BUS_ERR 分类正确；③ 0x02 成功、0x04 错误位判断与 LOG 一致；④ 重复读取 6 轮无漂移，无超时、无恢复失败触发。
+- **下一步**：机主批准 §5.2 第 3 步单次写回（`FEED_ONCE`）后实现 NCT page `0x0c`/reg `0x36` 写回与读回校验；此前保持阻断。
 
 ## 参考资料
 

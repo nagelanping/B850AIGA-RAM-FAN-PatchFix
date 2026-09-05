@@ -7,7 +7,7 @@
 PnP 绑定（upper-filter / function-driver）已在实验 B/C 证伪并删除；驱动不再接收 `EvtDeviceAdd`/translated resources。
 
 - 驱动以普通内核服务加载（`sc create RAMFanPnP type= kernel`），创建非 PnP 控制设备 `\Device\RamFanVirtTemp`。
-- 只实现 `IOCTL_RAMFAN_QUERY_HW`：PCI `DEV_790B` 存在性 + NCT chip id（标准 SIO `0x2e/0x2f`）的拒绝式身份门禁。
+- 只实现 `IOCTL_RAMFAN_QUERY_HW`：系统 PnP 枚举确认 PCI `DEV_790B` 存在（读 `Enum\PCI` 注册表，pci.sys 权威枚举）+ NCT chip id（标准 SIO `0x2e/0x2f`）的拒绝式身份门禁。实机证实 `HalGetBusDataByOffset` 在此平台读不到 PCI 配置空间，故不直接扫描 PCI。
 - `READ_DIMM_TEMP`、`FEED_ONCE` 保持阻断：不访问 SMBus 事务寄存器、不写 NCT `0x295/0x296`、不写 page `0x0c`。
 - 服务 `--identity` 只做身份检查；SCM 常驻喂值留到后续阶段（需单独批准）。
 
@@ -26,12 +26,12 @@ PnP 绑定（upper-filter / function-driver）已在实验 B/C 证伪并删除�
 
 ## 授权边界（四件事分开记录）
 
-- **身份依据**：主板型号、PCI `DEV_790B`、ACPI `PNP0C02` 声明、NCT chip id `0xd802`。用于拒绝式校验。
+- **身份依据**：主板型号、PCI `DEV_790B`（系统 PnP 枚举）、ACPI `PNP0C02` 声明、NCT chip id `0xd802`。用于拒绝式校验。
 - **访问依据**：当前无已确认的 Windows 资源持有或独占授权。ACPI/PCI 证据不能推出端口访问授权。
-- **实验批准**：机主 2026-09-05 批准本目标机受控实验例外，允许只读身份探针（PCI 配置读取 + `0x2e/0x2f`）。
+- **实验批准**：机主 2026-09-05 批准本目标机受控实验例外，允许只读身份探针（`Enum\PCI` 注册表 + `0x2e/0x2f`）。
 - **发布批准**：默认不具备。正式交付需可信签名与独立访问依据。
 
-本阶段驱动允许的硬件访问仅限：PCI 配置空间读取（DEV_790B 存在性）与标准 SIO `0x2e/0x2f`
+本阶段驱动允许的硬件访问仅限：系统 PnP 枚举（读 `Enum\PCI` 注册表确认 DEV_790B 存在）与标准 SIO `0x2e/0x2f`
 解锁→读 chip id→锁定。不做 SMBus 事务、不写 NCT 自定义端口。
 
 ## 前置条件
@@ -75,7 +75,7 @@ pwsh -File .\patch\windows\identity-gate-prep.ps1 -Configuration Release
 `QUERY_HW: SMBusBase=0x... ChipId=d802 ControllerFound=1 ChipIdValid=1 HwMatched=1`。
 
 若身份未通过，检查：
-- `ControllerFound=0`：PCI 扫描未找到 `VEN_1022&DEV_790B`（bus 0-15 覆盖不足或非目标机）。
+- `ControllerFound=0`：系统 PnP 枚举中不存在 `VEN_1022&DEV_790B`（非目标机或该控制器被禁用）。
 - `ChipId=ffff`：标准 SIO `0x2e/0x2f` 探针失败（被占用、无 NCT 或访问被拒）。
 - 任何身份误判即回到 Linux 交付路线，不进入写回。
 

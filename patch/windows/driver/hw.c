@@ -1,7 +1,10 @@
 /* hw.c — 只读身份探针（§5.2 第 1 步：身份门禁）
  *
  * 2026-09-05 机主批准的非 PnP 受控模型内允许的硬件访问，仅限：
- *   - PCI 配置空间读取（只读）：确认 FCH SMBus VEN_1022&DEV_790B 存在；
+ *   - 系统 PnP 枚举（只读注册表）：确认 FCH SMBus VEN_1022&DEV_790B 存在。
+ *     实机 2026-09-05 验证：HalGetBusDataByOffset 在此平台读不到 PCI 配置
+ *     空间（x64 legacy CF8/CFC 路径不可用，790B 实为 bus0/dev20/func0），
+ *     故改用 pci.sys 已权威枚举的 Enum\PCI 键作为设备存在性证据；
  *   - 标准 SIO 0x2e/0x2f（白名单）：解锁→读 chip id（0x20/0x21）→锁定，
  *     仅用于身份探针，不在驱动内做其他寄存器操作。
  * 本文件不访问 SMBus 事务寄存器（0xb00 偏移 0x00..0x06），不写 NCT
@@ -9,70 +12,36 @@
  */
 #include "ramfan.h"
 
-#define PCI_VENDOR_AMD       0x1022
-#define PCI_DEVICE_FCH_SMBUS 0x790B
-#define PCI_CFG_VENDOR_OFF   0x00
-#define PCI_CFG_BAR0_OFF     0x10
+#define RAMFAN_PCI_ENUM_790B_PATH \
+    L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum\\PCI\\VEN_1022&DEV_790B"
 
-/* ---- PCI 配置空间读取（bus 0-15，device 0-31，function 0-7） ---- */
-static NTSTATUS
-RamFanReadPciCfg(ULONG bus, ULONG device, ULONG func,
-                 ULONG offset, ULONG *valueOut)
-{
-    ULONG slot = (device << 16) | (func << 8);
-    ULONG value = 0;
-    ULONG n;
-
-    n = HalGetBusDataByOffset(PCIConfiguration, bus, slot,
-                              &value, offset, sizeof(value));
-    if (n != sizeof(value)) {
-        return STATUS_NOT_FOUND;
-    }
-    *valueOut = value;
-    return STATUS_SUCCESS;
-}
-
-/* ---- 定位 FCH SMBus 控制器（身份依据；不访问其 I/O 寄存器） ---- */
+/* ---- 确认 FCH SMBus 控制器存在（身份依据；不访问其 I/O 寄存器） ---- */
 NTSTATUS
 RamFanProbeFchSmbusController(BOOLEAN *foundOut, USHORT *baseOut)
 {
-    ULONG bus, device, func;
+    OBJECT_ATTRIBUTES oa;
+    UNICODE_STRING path;
+    HANDLE key = NULL;
+    NTSTATUS status;
 
     *foundOut = FALSE;
     if (baseOut != NULL) {
         *baseOut = 0;
     }
 
-    for (bus = 0; bus < 16; bus++) {
-        for (device = 0; device < 32; device++) {
-            for (func = 0; func < 8; func++) {
-                ULONG vidDid = 0;
-                ULONG bar0 = 0;
-
-                if (!NT_SUCCESS(RamFanReadPciCfg(bus, device, func,
-                                                 PCI_CFG_VENDOR_OFF, &vidDid))) {
-                    continue;
-                }
-                if ((vidDid & 0xFFFF) != PCI_VENDOR_AMD) {
-                    continue;
-                }
-                if (((vidDid >> 16) & 0xFFFF) != PCI_DEVICE_FCH_SMBUS) {
-                    continue;
-                }
-                *foundOut = TRUE;
-
-                if (baseOut != NULL &&
-                    NT_SUCCESS(RamFanReadPciCfg(bus, device, func,
-                                                PCI_CFG_BAR0_OFF, &bar0))) {
-                    /* BAR0：bit0=1 表示 I/O 空间；掩码 0xFFFC 取基址。
-                       BAR 无效（未映射）时保持 0，不做猜测回退。 */
-                    if ((bar0 & 0x1) && (bar0 & 0xFFFC) != 0) {
-                        *baseOut = (USHORT)(bar0 & 0xFFFC);
-                    }
-                }
-                return STATUS_SUCCESS;
-            }
+    /* pci.sys 已枚举该硬件 ID 才存在此键；只读系统信息，无端口访问。 */
+    RtlInitUnicodeString(&path, RAMFAN_PCI_ENUM_790B_PATH);
+    InitializeObjectAttributes(&oa, &path,
+                               OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+                               NULL, NULL);
+    status = ZwOpenKey(&key, KEY_READ, &oa);
+    if (NT_SUCCESS(status)) {
+        *foundOut = TRUE;
+        if (baseOut != NULL) {
+            /* 固定目标基址是 ACPI/历史证据值，不是从 PCI BAR 探测所得 */
+            *baseOut = RAMFAN_SMBUS_RESOURCE_START;
         }
+        ZwClose(key);
     }
     return STATUS_SUCCESS;
 }

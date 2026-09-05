@@ -4,7 +4,7 @@
 
 - **Linux 0.1 已归档**：实现和完整 Linux 工作记录位于 `archive/0.1/linux/`；发布包仍在 `release/linux/`。
 - **当前工作目标**：实现 Windows KMDF 内核驱动 + Windows Service，持续向 NCT `Virtual_TEMP` 喂入 DIMM 温度。
-- **当前阶段**：机主已于 2026-09-05 批准**受控非 PnP 访问模型**实验例外（四件事与硬约束见 `AGENTS.md`“授权边界”）。Windows 重构为**非 PnP KMDF 控制设备 + 只读身份门禁**（§5.2 第 1 步）：`QUERY_HW` 只做 PCI `DEV_790B` 存在性 + NCT chip id（标准 SIO `0x2e/0x2f`）拒绝式校验，不访问 SMBus 事务寄存器、不写 NCT。`READ_DIMM_TEMP` / `FEED_ONCE` 保持阻断。PnP 骨架（resource_model、upper-filter、QUERY_RESOURCE）已删除。下一步由机主执行 `identity-gate-prep.ps1` 实机验证身份门禁。
+- **当前阶段**：机主已于 2026-09-05 批准**受控非 PnP 访问模型**实验例外。实机身份门禁首跑：NCT chip id 探针通过（`ChipId=d802 ChipIdValid=1`），但 PCI 探针 `ControllerFound=0`——`HalGetBusDataByOffset` 在此平台读不到 PCI 配置空间（790B 实为 bus0/dev20/func0 仍失败）。已改为读系统 PnP 枚举注册表 `Enum\PCI\VEN_1022&DEV_790B`（pci.sys 权威枚举，只读系统信息）；修正已编译待机主重启换驱动再验证。
 ## 根因与目标链路
 
 
@@ -280,6 +280,16 @@ outb((v & 0xf0) | page, 0x296)
 - **验证**：驱动/服务 x64 Debug、Release 双配置构建通过；`test-identity-model.ps1`（修复 ChipIdValid 语义：任一字节 0xff 视为探针失败后通过）与 `test-smbus-model.ps1` 全绿。
 - **子代理独立审查**：无严重问题。已修复 [中等] M1（`RamFanEndIo` 移到 `WdfRequestComplete` 之后，避免 EndIo 归零到 Complete 之间的设备删除竞态）、[轻微] L7（`RamFanCreateDevice` 失败路径显式 `WdfObjectDelete`）；L2 过时阶段注释已清理。L3（服务名 RAMFanPnP 沿用历史名）与 L4（`HalGetBusDataByOffset` 跨 bus 覆盖需实机确认）记为已知依赖，在实机运行时记录。
 - **下一步**：机主执行 `patch/windows/identity-gate-prep.ps1 -Configuration Release`，记录 QUERY_HW 结果（预期 ChipId=d802、ControllerFound=1、HwMatched=1），任何身份误判即回到 Linux 交付；通过后经独立审查再申请 §5.2 第 2 步 SMBus 试验批准。
+
+## 2026-09-05 实机身份门禁首跑（agent 在目标机执行）
+
+- 机主授权 agent 在本目标机直接执行（权限足够）。环境核查通过：管理员、Secure Boot False、testsigning on、证书 RAMFanTestSign 在、无监控进程。
+- `identity-gate-prep.ps1 -Configuration Release`：`/ph` 签名成功、复制到 System32\drivers、`sc create RAMFanPnP`（type=kernel, demand）并启动成功（RUNNING）。
+- **QUERY_HW 首跑结果：`SMBusBase=0x0000 ChipId=d802 ControllerFound=0 ChipIdValid=1 HwMatched=0`**。NCT chip id 探针工作正常（0x2e/0x2f 读写一致，chip id 0xd802），PCI 探针失败。
+- **根因**：790B 实机位置 bus0/device20/func0（`PCIROOT(0)#PCI(1400)`，DEVPKEY_Device_LocationInfo 确认），扫描范围覆盖它，但 `HalGetBusDataByOffset` 在此 x64 平台读不到 PCI 配置空间（legacy CF8/CFC 路径不可用，与现代 PCI MCFG/ECAM 枚举一致；审查 L4 已预警该风险，此为首次实机证实）。
+- **修正**：`hw.c` 的 `RamFanProbeFchSmbusController` 改为只读系统 PnP 枚举注册表 `HKLM\SYSTEM\CurrentControlSet\Enum\PCI\VEN_1022&DEV_790B`（键存在即 pci.sys 已权威枚举该设备；实机确认该键存在）。`SmbusBase` 在控制器存在时返回固定目标基址 `0xb00`（ACPI/历史证据值，明确非 PCI BAR 探测）。无端口访问新增。
+- **驱动卸载受阻**：旧二进制加载后 `sc stop` 返回 1052（无法卸载，SYSTEM32\drivers\ramfan.sys 被占用）。与实验 B 换驱动时一致，需要重启后加载新驱动。当前驱动只读且未写任何值，无风险。
+- **待办**：机主重启 → agent 重新执行 `identity-gate-prep.ps1` 验证修正（预期 `ChipId=d802 ControllerFound=1 HwMatched=1`）。
 
 ## 参考资料
 

@@ -123,9 +123,9 @@ Windows 版本优先采用 **KMDF 内核驱动 + Windows Service**，不把 WinR
 - Windows 中 SPD 7-bit 地址和 SMBus 写入地址字节不要混淆：`0x53` 对应读地址字节 `0xa7`；固件记录的 `0xa6` 是另一种写格式表示。
 - Ghidra 12.1.2 与 JDK26 不兼容；固件分析使用已有 objdump/flat-image 结果，不为 Windows 开发重复建立 Ghidra 流程。
 - 系统无 `xxd` 时使用 `od`。
-- Windows 非 PnP 身份门禁只允许两类只读硬件接触：PCI 配置空间读取（`DEV_790B` 存在性）与标准 SIO `0x2e/0x2f` 解锁→读 chip id→锁定；不得在身份门禁路径访问 SMBus 事务寄存器（`0xb00` 偏移 `0x00-0x06`）、NCT 自定义端口 `0x295/0x296` 或写 page `0x0c`。`HwMatched` 只要求控制器存在 + chip id==0xd802，不要求 SMBus BAR 等于 0xb00。
+- Windows 非 PnP 身份门禁只允许两类只读硬件接触：系统 PnP 枚举注册表 `Enum\PCI\VEN_1022&DEV_790B`（`DEV_790B` 存在性，pci.sys 权威枚举，只读系统信息）与标准 SIO `0x2e/0x2f` 解锁→读 chip id→锁定；不得在身份门禁路径访问 SMBus 事务寄存器（`0xb00` 偏移 `0x00-0x06`）、NCT 自定义端口 `0x295/0x296` 或写 page `0x0c`。`HwMatched` 只要求控制器存在 + chip id==0xd802，不要求 SMBus BAR 等于 0xb00（`SmbusBase` 在控制器存在时返回固定目标基址 `0xb00`，非 PCI BAR 探测）。
 - 内核服务名沿用历史名 `RAMFanPnP`（2026-09-05 前的实验遗留名），实际是**非 PnP** 内核服务；不要在文档中把它描述为 PnP filter，改名须同步 prep/rollback/WINDOWS.md/回滚验收。
-- `HalGetBusDataByOffset` 在 x64 上对跨 bus 的 PCI 配置访问支持可能受限（实际可能只覆盖 bus 0）；身份门禁扫描 bus 0-15 属尽力而为，实机运行时须记录扫描覆盖，非目标机/找不到控制器的失败方向是拒绝（安全方向）。
+- 实机证实（2026-09-05）：`HalGetBusDataByOffset` 在此 x64 平台读不到任何 PCI 配置空间（790B 在 bus0/dev20/func0 也失败，legacy CF8/CFC 路径不可用）；不要再尝试用该 API 或端口扫描 PCI，身份门禁的 `DEV_790B` 存在性以 `Enum\PCI` 注册表为准。
 - Windows 实机已验证：目标 `PNP0C02\700`/`\0` 由 machine.inf 提供且 Enum 键无 Service（无功能驱动 FDO），upper filter 无法附加（运行期与开机栈构建均不生效），function-driver 替换被 pnputil/SetupDi/UpdateDriver 拒绝；因此“绑定 PnP 设备持有 translated resources”的 Windows 访问模型在本平台不可行，不得以自声明端口或绕过签名方式交付（WORKFLOW §7，2026-09-05）。已删除的 `resource_model.c` 角色分类逻辑属于该已证伪路径，不得恢复。
 
 ## 工作规则

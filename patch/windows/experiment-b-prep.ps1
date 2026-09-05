@@ -1,6 +1,7 @@
-# experiment-b-prep.ps1 — 实验 B 准备（系统状态：启用测试签名，需重启后生效）
+# experiment-b-prep.ps1 — 历史工具（实验 B：PnP 绑定测试，已证伪归档）
+# 仍可复用：测试证书 RAMFanTestSign 创建/信任、testsigning 开启、Inf2Cat/catalog 与 /ph 签名。
+# 当前身份门禁阶段请使用 identity-gate-prep.ps1 / identity-gate-rollback.ps1。
 # 前置：已在 patch/windows 下构建 Release；管理员；Secure Boot False。
-# 不做：驱动安装、设备重启、端口访问。运行后必须重启，再执行 experiment-b-verify.ps1。
 [CmdletBinding()]
 param(
     [string]$Configuration = 'Release'

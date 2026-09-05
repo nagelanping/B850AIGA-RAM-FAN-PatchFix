@@ -1,6 +1,6 @@
 #pragma once
 
-// ramfan_ioctl.h — 驱动与服务共享的 IOCTL 定义（阶段 2：FEED_ONCE 写回）
+// ramfan_ioctl.h — 驱动与服务共享的 IOCTL 定义（身份门禁 + 后续写回步骤）
 // 用户态（服务）与内核态（驱动）都可包含，不依赖 ntddk.h/wdf.h。
 // 所有常量来自 LOG.md 已确认事实，禁止改动温度源/曲线相关寄存器。
 
@@ -16,15 +16,15 @@ extern "C" {
 #define RAMFAN_DOS_DEVICE_NAME L"\\DosDevices\\RamFanVirtTemp"
 #define RAMFAN_WIN32_DEVICE    L"\\\\.\\RamFanVirtTemp"
 
-// ---- PnP translated resource identification ranges (read-only skeleton) ----
+// ---- 固定目标端口白名单（2026-09-05 机主批准的非 PnP 受控模型）----
+// ACPI/历史证据值；只作为驱动内部固定访问目标与拒绝式平台校验，不代表独占授权。
 #define RAMFAN_SMBUS_RESOURCE_START       0x0b00
 #define RAMFAN_SMBUS_RESOURCE_LENGTH      0x10
 #define RAMFAN_NCT_RESOURCE_START         0x0290
 #define RAMFAN_NCT_RESOURCE_LENGTH        0x10
 #define RAMFAN_STANDARD_SIO_RESOURCE_START  0x002e
 #define RAMFAN_STANDARD_SIO_RESOURCE_LENGTH 0x02
-
-// ---- SMBus HST 寄存器偏移（基址由 PnP/ACPI 资源确认）----
+// ---- SMBus HST 寄存器偏移（基址为白名单固定目标 0xb00，仅平台校验通过后使用）----
 #define HST_STS_OFF   0x00
 #define HST_CNT_OFF   0x02
 #define HST_CMD_OFF   0x03
@@ -89,15 +89,18 @@ typedef struct _RAMFAN_DIMM_RESULT {
 #define RAMFAN_DIMM_BAD_DATA    4
 #define RAMFAN_DIMM_UNCHECKED  5
 
-// ---- IOCTL（阶段 1 只读 + 阶段 2 FEED_ONCE；禁止裸端口暴露） ----
+// ---- IOCTL（身份门禁 QUERY_HW 已启用；READ_DIMM_TEMP / FEED_ONCE 未批准前保持阻断）----
 #define RAMFAN_IOCTL_BASE FILE_DEVICE_UNKNOWN
 
-// 输出：SMBus 基址、chip id、硬件匹配标志
+// 输出：身份门禁结果（只读探针；不访问 SMBus 事务寄存器、不写 NCT）
 typedef struct _RAMFAN_QUERY_HW_OUT {
-    unsigned short SmbusBase;   // 从 PCI BAR 确认的基址（预期 0xb00）
-    unsigned char  ChipIdHi;
+    unsigned short SmbusBase;       // PCI 扫描确认的 FCH SMBus BAR0（I/O 有效时）；0=未取得
+    unsigned char  ChipIdHi;        // NCT 标准 SIO 身份探针结果（失败=0xff）
     unsigned char  ChipIdLo;
-    unsigned char  HwMatched;   // 非零=硬件匹配（SMBus 基址有效且 chip id 匹配）
+    unsigned char  ControllerFound; // 1=PCI VEN_1022&DEV_790B 找到
+    unsigned char  ChipIdValid;     // 1=探针成功（非 0xffff）
+    unsigned char  HwMatched;       // 1=ControllerFound && chip id==0xd802
+    unsigned char  Reserved;
 } RAMFAN_QUERY_HW_OUT;
 
 // 输出：全部候选槽读取结果 + 最高有效温度
@@ -108,7 +111,7 @@ typedef struct _RAMFAN_READ_DIMM_OUT {
     RAMFAN_DIMM_RESULT Slots[RAMFAN_SPD_ADDR_COUNT];
 } RAMFAN_READ_DIMM_OUT;
 
-// ---- FEED_ONCE 输出（阶段 2 草稿；资源未授权时不得写回） ----
+// ---- FEED_ONCE 输出（写回步骤未批准前不得写；状态 4=未授权）----
 // Status: 0=成功写入并读回一致 1=读取失败未写 2=写入失败/读回不一致
 //         3=硬件不匹配 4=端口资源/访问模型未授权
 typedef struct _RAMFAN_FEED_ONCE_OUT {
@@ -125,24 +128,6 @@ typedef struct _RAMFAN_FEED_ONCE_OUT {
 #define RAMFAN_FEED_HW_MISMATCH    3
 #define RAMFAN_FEED_HW_UNAVAILABLE 4
 
-// ---- QUERY_RESOURCE 输出：PnP 资源登记快照（只读，不访问端口） ----
-// 供实验 B 在加载 upper-filter 后确认两个目标实例的 PrepareHardware 是否
-// 触发并正确登记 translated port resources，无需任何硬件 I/O。
-typedef struct _RAMFAN_QUERY_RESOURCE_OUT {
-    unsigned char  SmbusReady;      // SMBUS 角色槽已登记且无冲突
-    unsigned char  NctReady;        // NCT 角色槽已登记且无冲突
-    unsigned char  SmbusConflict;   // SMBUS 目标被多个实例声明
-    unsigned char  NctConflict;     // NCT 目标被多个实例声明
-    unsigned char  SioReady;        // 标准 SIO 0x2e/0x2f 已随角色实例登记
-    unsigned char  HwComplete;      // SMBUS+NCT 均 Ready 且 SIO 可用
-    unsigned short SmbusBase;       // 登记后的 SMBus 基址（预期 0x0b00）
-    unsigned short NctBase;         // 登记后的 NCT 自定义口基址（预期 0x0290）
-    unsigned short StandardSioBase; // 登记后的标准 SIO 基址（预期 0x002e）
-    unsigned short Reserved;
-} RAMFAN_QUERY_RESOURCE_OUT;
-
-#define IOCTL_RAMFAN_QUERY_RESOURCE \
-    CTL_CODE(RAMFAN_IOCTL_BASE, 0x803, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 #ifndef CTL_CODE
 #define CTL_CODE(DeviceType, Function, Method, Access) \

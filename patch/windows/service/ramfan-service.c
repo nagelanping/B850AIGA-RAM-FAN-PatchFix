@@ -1,7 +1,9 @@
-/* ramfan-service.c — B850AIGA RAM-FAN Virtual_TEMP 补丁服务（阶段 2）
+/* ramfan-service.c — B850AIGA RAM-FAN Virtual_TEMP 补丁服务（受控试验，身份门禁阶段）
  *
- *   - --once、--install、--uninstall 当前拒绝；默认 SCM 模式仅执行阶段 2只读检查
- *   - 常驻 0.5s 喂值留到阶段 3，不接触裸端口
+ *   - --identity：只读身份门禁检查（打开驱动设备，QUERY_HW，不访问 SMBus、不写 NCT）
+ *   - --once / --install / --uninstall：当前仍拒绝（写回与 SCM 生命周期需后续批准）
+ *   - 默认 SCM 模式启动时执行一次身份门禁检查；常驻 0.5s 喂值留到后续阶段
+ *   - 服务/驱动模型：非 PnP 控制设备（2026-09-05 机主批准）
  *
  * 构建：MSVC，链接 advapi32（SCM）与 kernel32。
  * 包含共享定义：../driver/ramfan_ioctl.h
@@ -63,16 +65,15 @@ OpenDevice(void)
                        NULL);
 }
 
-/* ---- 硬件识别 + 只读温度，返回 0=成功 1=硬件/IO 失败 ---- */
+/* ---- 身份门禁检查（阶段 §5.2 第 1 步）：只读 QUERY_HW ---- */
+/* 返回 0=身份匹配 1=硬件/IO 失败或身份不匹配 2=参数错误。不访问 SMBus、不写 NCT。 */
 static int
-RunReadOnlyCycle(void)
+RunIdentityGateCheck(void)
 {
     HANDLE h;
     DWORD bytesReturned = 0;
     RAMFAN_QUERY_HW_OUT qh = {0};
-    RAMFAN_READ_DIMM_OUT rd = {0};
     BOOL ok;
-    int i;
 
     h = OpenDevice();
     if (h == INVALID_HANDLE_VALUE) {
@@ -88,43 +89,29 @@ RunReadOnlyCycle(void)
         CloseHandle(h);
         return 1;
     }
-    LogMessage("QUERY_HW: SMBusBase=0x%04x ChipId=%02x%02x HwMatched=%u",
-               qh.SmbusBase, qh.ChipIdHi, qh.ChipIdLo, qh.HwMatched);
-    if (!qh.HwMatched) {
-        LogMessage("ERROR: 硬件不匹配（预期 SMBus 有效 + chip id %02x%02x），拒绝继续",
-                   NCT_EXPECTED_CHIP_ID_HI, NCT_EXPECTED_CHIP_ID_LO);
-        CloseHandle(h);
-        return 1;
-    }
-
-    bytesReturned = 0;
-    ok = DeviceIoControl(h, IOCTL_RAMFAN_READ_DIMM_TEMP, NULL, 0,
-                         &rd, sizeof(rd), &bytesReturned, NULL);
-    if (!ok || bytesReturned != sizeof(rd)) {
-        LogMessage("ERROR: READ_DIMM_TEMP 失败 GLE=%lu bytes=%lu",
-                   GetLastError(), bytesReturned);
-        CloseHandle(h);
-        return 1;
-    }
-
-    for (i = 0; i < rd.Count && i < RAMFAN_SPD_ADDR_COUNT; i++) {
-        const RAMFAN_DIMM_RESULT *s = &rd.Slots[i];
-        LogMessage("  DIMM 0x%02x: status=%u raw=0x%04x temp=%u°C",
-                   s->Address, s->Status, s->Raw, s->Celsius);
-    }
-    LogMessage("READ_DIMM_TEMP: AnySuccess=%u MaxCelsius=%u",
-               rd.AnySuccess, rd.MaxCelsius);
+    LogMessage("QUERY_HW: SMBusBase=0x%04x ChipId=%02x%02x "
+               "ControllerFound=%u ChipIdValid=%u HwMatched=%u",
+               qh.SmbusBase, qh.ChipIdHi, qh.ChipIdLo,
+               qh.ControllerFound, qh.ChipIdValid, qh.HwMatched);
 
     CloseHandle(h);
-    return rd.AnySuccess ? 0 : 1;
+
+    if (!qh.HwMatched) {
+        LogMessage("ERROR: 身份门禁未通过（预期 PCI DEV_790B + chip id %02x%02x），拒绝继续",
+                   NCT_EXPECTED_CHIP_ID_HI, NCT_EXPECTED_CHIP_ID_LO);
+        return 1;
+    }
+    LogMessage("身份门禁通过。");
+    return 0;
 }
 
-/* ---- 阶段 2：--once 执行一次完整喂值 ---- */
+
+/* ---- 写回：--once 执行一次完整喂值（写回步骤未批准前禁用） ---- */
 static int
 RunFeedOnce(void)
 {
     if (g_FeedDisabled) {
-        LogMessage("当前资源识别骨架禁止 --once；未连接驱动。");
+        LogMessage("FEED_ONCE 当前禁用（写回步骤未批准）；未连接驱动。");
         return 1;
     }
     HANDLE h;
@@ -216,18 +203,19 @@ ServiceMain(DWORD argc, LPWSTR *argv)
         return;
     }
 
-    /* 阶段 2：启动时只做只读检查；失败时有限重试，不执行 FEED_ONCE。 */
-    LogMessage("SERVICE START (stage 2 read-only check)");
+    /* 阶段 §5.2 第 1 步：启动时只做只读身份门禁检查；失败有限重试。
+       不执行 FEED_ONCE，不访问 SMBus 事务寄存器。 */
+    LogMessage("SERVICE START (identity gate check)");
     for (attempt = 0; attempt < 3; attempt++) {
-        readStatus = RunReadOnlyCycle();
+        readStatus = RunIdentityGateCheck();
         if (readStatus == 0 || g_StopEvent == NULL ||
             WaitForSingleObject(g_StopEvent, 1000) == WAIT_OBJECT_0) {
             break;
         }
-        LogMessage("WARN: 只读检查失败，准备第 %d 次重试", attempt + 2);
+        LogMessage("WARN: 身份门禁检查失败，准备第 %d 次重试", attempt + 2);
     }
     if (readStatus != 0) {
-        LogMessage("ERROR: 只读检查重试仍失败，服务停止");
+        LogMessage("ERROR: 身份门禁检查重试仍失败，服务停止");
         CloseHandle(g_StopEvent);
         g_StopEvent = NULL;
         g_Status.dwCurrentState = SERVICE_STOPPED;
@@ -239,7 +227,7 @@ ServiceMain(DWORD argc, LPWSTR *argv)
     g_Status.dwCheckPoint = 0;
     SetServiceStatus(g_StatusHandle, &g_Status);
 
-    /* 等待停止（阶段 3 改为 0.5s 喂值循环） */
+    /* 等待停止（后续阶段改为 0.5s 喂值循环） */
     WaitForSingleObject(g_StopEvent, INFINITE);
 
     LogMessage("SERVICE STOP");
@@ -252,7 +240,7 @@ static int
 InstallService(void)
 {
     if (g_InstallDisabled) {
-        printf("当前 PnP 资源识别骨架禁止用户态服务安装。\n");
+        printf("SCM 用户态服务安装当前禁用（身份门禁阶段只允许驱动直接加载与 --identity）。\n");
         return 1;
     }
     SC_HANDLE scm, svc;
@@ -281,7 +269,7 @@ InstallService(void)
         svc = OpenServiceW(scm, RAMFAN_SERVICE_NAME, SERVICE_ALL_ACCESS);
     }
     if (svc != NULL) {
-        desc.lpDescription = (LPWSTR)L"RAMFan 阶段 2开发测试；FEED_ONCE 当前受端口资源门禁阻断";
+        desc.lpDescription = (LPWSTR)L"RAMFan VirtualTEMP Feeder（受控试验；写回步骤未批准前 FEED_ONCE 阻断）";
         ChangeServiceConfig2W(svc, SERVICE_CONFIG_DESCRIPTION, &desc);
         CloseServiceHandle(svc);
     }
@@ -294,7 +282,7 @@ static int
 UninstallService(void)
 {
     if (g_InstallDisabled) {
-        printf("当前 PnP 资源识别骨架禁止用户态服务卸载。\n");
+        printf("SCM 用户态服务卸载当前禁用。\n");
         return 1;
     }
     SC_HANDLE scm, svc;
@@ -328,6 +316,7 @@ int
 main(int argc, char **argv)
 {
     int once = 0;
+    int identity = 0;
     int install = 0;
     int uninstall = 0;
     int i;
@@ -335,19 +324,21 @@ main(int argc, char **argv)
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--once") == 0) {
             once = 1;
+        } else if (strcmp(argv[i], "--identity") == 0) {
+            identity = 1;
         } else if (strcmp(argv[i], "--install") == 0) {
             install = 1;
         } else if (strcmp(argv[i], "--uninstall") == 0) {
             uninstall = 1;
         } else {
             printf("未知参数: %s\n", argv[i]);
-            printf("用法: ramfan-service [--once|--install|--uninstall]\n");
+            printf("用法: ramfan-service [--identity|--once|--install|--uninstall]\n");
             return 2; /* 参数错误 */
         }
     }
 
-    if (once + install + uninstall > 1) {
-        printf("参数互斥：--once、--install、--uninstall 只能选择一个。\n");
+    if (once + identity + install + uninstall > 1) {
+        printf("参数互斥：--identity、--once、--install、--uninstall 只能选择一个。\n");
         return 2;
     }
 
@@ -356,6 +347,9 @@ main(int argc, char **argv)
     }
     if (uninstall) {
         return UninstallService();
+    }
+    if (identity) {
+        return RunIdentityGateCheck();
     }
     if (once) {
         return RunFeedOnce();

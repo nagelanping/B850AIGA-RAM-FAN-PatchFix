@@ -44,7 +44,7 @@
 
   <PropertyGroup>
     <TargetName>ramfan</TargetName>
-    <!-- 构建期不签名（签名在 install-test.ps1 用测试证书完成） -->
+    <!-- 构建期不签名（签名在 identity-gate-prep.ps1 用测试证书 /ph 完成） -->
     <SignMode>Off</SignMode>
   </PropertyGroup>
 
@@ -74,14 +74,15 @@
   </ItemDefinitionGroup>
 
   <ItemGroup>
+    <ClCompile Include="hw.c" />
+    <ClCompile Include="identity_model.c" />
     <ClCompile Include="ramfan.c" />
-    <ClCompile Include="resource_model.c" />
   </ItemGroup>
 
   <ItemGroup>
+    <ClInclude Include="identity_model.h" />
     <ClInclude Include="ramfan.h" />
     <ClInclude Include="ramfan_ioctl.h" />
-    <ClInclude Include="resource_model.h" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -45,8 +45,10 @@ Linux 版本已经完成实机闭环，是当前可交付的修复。Windows 工
 - 不再继续修改 INF、upper-filter、PNP0C02 function-driver 替换或用 PCI 资源授权 NCT 端口。
 `LOG.md` 中早于 2026-09-05 的 PNP0C02 绑定方案仅是历史计划，不得恢复为当前实施计划或授权依据。
 
-机器当前仍有测试遗留：testsigning 为 on，测试证书 `RAMFanTestSign` 在 Machine 存储中。若不立即进入 Windows 试验，先执行回滚脚本并重启。
+### 3.3 授权状态（2026-09-05 更新）
 
+- **机主已批准**目标机受控非 PnP 访问模型实验例外；四件事（身份/访问/实验批准/发布批准）已记录于 `AGENTS.md`“授权边界”。
+- 当前阶段：§5.2 第 1 步**只读身份门禁**。testsigning on 与测试证书保留供本机试验使用。
 ## 4. 修复优先级与路线选择
 
 按“能修复问题”排序：
@@ -56,7 +58,7 @@ Linux 版本已经完成实机闭环，是当前可交付的修复。Windows 工
 3. **Windows 正式交付**：只有存在可信签名、可接受的端口授权依据、可回滚安装方式和目标机闭环证据时才制作。
 4. **SMM/BIOS 方案**：仅在 Windows 受控试验失败且机主另行批准后评估；本工作流不刷写 BIOS。
 
-“Windows 必须绑定 PnP translated resources”不再是修复目标本身，而是已失败的授权方案。若机主不批准放宽模型，则 Windows 停止在阶段 1，项目以 Linux 版本交付。
+"Windows 必须绑定 PnP translated resources"不再是修复目标本身，而是已失败的授权方案。受控非 PnP 模型仅以机主批准的目标机实验例外推进；未批准对应试验前不写回。
 
 ## 5. Windows 受控可行性试验（必须先批准）
 
@@ -129,8 +131,7 @@ Windows 决策期间不改造 Linux 链路。发布/维护只做必要修复：
 
 ## 9. 当前下一步
 
-1. 机主决定是否批准第 5 节的受控非 PnP 访问模型。
-2. 未批准：执行 `patch/windows/experiment-b-rollback.ps1 -RemoveCert`，重启关闭 testsigning，Windows 停止，维护 Linux 发布。
-未批准 Windows 时的 Linux 收尾还必须确认：Windows 测试服务、驱动、DriverStore、UpperFilters 和测试证书均已清理；testsigning 已关闭并在重启后生效；Linux release 包、systemd unit 和使用说明一致；不得把 Windows 测试版描述为正式修复方案。
-3. 已批准：先修订 `AGENTS.md`/本文件的授权边界，再只实现第 5.2 的身份门禁和只读 SMBus 阶段；不得直接恢复写回。
-4. 任何 Windows 试验结果写回 `LOG.md`，通过独立审查后再进入下一阶段。
+1. 已批准（2026-09-05）：实施 §5.2 第 1 步**只读身份门禁**并同步修订 `AGENTS.md` 授权边界。
+2. 第 1 步完成后：机主在目标机加载驱动并执行只读身份 IOCTL，把结果与基线写回 `LOG.md`。
+3. §5.2 第 2 步（SMBus 读 DIMM）必须单独取得机主批准后再进行。
+4. 任何 Windows 试验失败即回到 Linux 交付路线（§7）；不得扩展功能或绕过门禁。

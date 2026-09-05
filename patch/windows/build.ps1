@@ -48,11 +48,7 @@ function Invoke-MsBuild([string]$Project) {
 Invoke-MsBuild (Join-Path $root 'driver\ramfan.vcxproj')
 Invoke-MsBuild (Join-Path $root 'service\ramfan-service.vcxproj')
 
-$driverOutput = Join-Path $root "driver\x64\$Configuration"
-Remove-Item (Join-Path $driverOutput 'ramfan.inf') -Force -ErrorAction SilentlyContinue
-
-
-Write-Host "`n构建完成。产物位于："
-Write-Host "  driver\x64\$Configuration\ramfan.sys"
+Write-Host "`n构建完成。产物："
+Write-Host "  driver\x64\$Configuration\ramfan.sys（未签名）"
 Write-Host "  service\x64\$Configuration\ramfan-service.exe"
-Write-Host "`n当前仅生成未签名资源识别骨架；安装流程暂停，勿执行 install-test.ps1。"
+Write-Host "身份门禁阶段：安装/加载需由机主在目标机执行（测试签名 + sc 加载），本脚本不安装。"

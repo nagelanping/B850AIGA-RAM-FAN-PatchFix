@@ -4,7 +4,7 @@
 
 - **Linux 0.1 已归档**：实现和完整 Linux 工作记录位于 `archive/0.1/linux/`；发布包仍在 `release/linux/`。
 - **当前工作目标**：实现 Windows KMDF 内核驱动 + Windows Service，持续向 NCT `Virtual_TEMP` 喂入 DIMM 温度。
-- **当前阶段**：Windows 阶段 2 PnP 资源绑定经实机实验证伪——PNP0C02 目标节点无功能驱动层，upper filter 不挂载、function-driver 替换被系统拒绝（实验 B/C，详见下）。按 WORKFLOW.md §7 暂停 Windows 端口访问路径，FEED_ONCE 保持阻断。Linux 版本为当前交付。保留的控制设备分发修复与 QUERY_RESOURCE 等改进未提交待审。
+- **当前阶段**：机主已于 2026-09-05 批准**受控非 PnP 访问模型**实验例外（四件事与硬约束见 `AGENTS.md`“授权边界”）。Windows 重构为**非 PnP KMDF 控制设备 + 只读身份门禁**（§5.2 第 1 步）：`QUERY_HW` 只做 PCI `DEV_790B` 存在性 + NCT chip id（标准 SIO `0x2e/0x2f`）拒绝式校验，不访问 SMBus 事务寄存器、不写 NCT。`READ_DIMM_TEMP` / `FEED_ONCE` 保持阻断。PnP 骨架（resource_model、upper-filter、QUERY_RESOURCE）已删除。下一步由机主执行 `identity-gate-prep.ps1` 实机验证身份门禁。
 ## 根因与目标链路
 
 
@@ -77,10 +77,10 @@ outb((v & 0xf0) | page, 0x296)
 1. ✅ 记录 Windows 环境（见下方 2026-09-04 Windows 环境记录）。
 2. ✅ 准备 VS + SDK + WDK（VS 2026 Community 18.9 / SDK 10.0.26100 已装；WDK 10.0.26100 安装中）；阶段 1 工程已建。
 3. ✅ 阶段 1 代码：驱动加载/卸载、硬件识别、设备句柄、只读 SMBus IOCTL；待构建与实机验证（禁止写 NCT）。
-4. 阶段 2资源门槛：评估 AMD SMBus PCI upper-filter，确认 translated SMBus 资源；单独确认 `PNP0C02` 的 NCT 端口及 `0x2e/0x2f` 访问模型；完成后再恢复 FEED_ONCE 闭环。
-5. 阶段 3：启用 0.5 秒常驻服务，验证服务重启、睡眠恢复和系统重启后自动恢复。
-6. 阶段 4：完成空槽、单 DIMM 失败、全失败、超时、读回不一致、卸载回滚和内存加压测试。
-7. 阶段 1 代码完成后交子代理独立审查；机主实机验证结果、签名方式、版本和风险写回本文件。
+4. ✅ 2026-09-05：机主批准受控非 PnP 模型；驱动重构为非 PnP 控制设备 + 只读身份门禁（§5.2 第 1 步），已构建、纯逻辑自检与子代理审查通过，见 LOG 末尾 2026-09-05 条目。
+5. 机主执行 `patch/windows/identity-gate-prep.ps1`：加载驱动并运行 `--identity`，记录 QUERY_HW 结果与风险后写回 LOG。
+6. 受控 SMBus 试验（§5.2 第 2 步，读 DIMM）：需机主单独批准后再实现。
+7. 写回（`FEED_ONCE`）与常驻服务（阶段 3/4）：逐级批准 + 独立审查 + 实机证据后恢复。
 
 ## 风险与禁止事项
 
@@ -269,6 +269,17 @@ outb((v & 0xf0) | page, 0x296)
 - 增加进入只读阶段前的驱动加载/卸载、ACL、IOCTL 阻断和安装失败恢复门槛；扩展回滚残留检查和 Microsoft Attestation/WHQL 等正式签名门槛。
 - 复审后的结论：工作流可作为决策和受控试验依据，但不解除当前写回阻断；尚无任何 Windows 端口访问或代码恢复授权。
 
+## 2026-09-05 机主批准受控模型，实现只读身份门禁（§5.2 第 1 步）
+
+- **机主已批准**受控非 PnP 访问模型实验例外（决策经 ask_user_question 明确选择）。`AGENTS.md` 新增“授权边界”节记录四件事（身份/访问/实验批准/发布批准）与硬约束；`WORKFLOW.md` §3.3/§9 同步为“已批准，进入只读身份门禁”。
+- **驱动重构为非 PnP 控制设备**（`patch/windows/driver/ramfan.c` 重写）：`DriverEntry` 用 `WDF_DRIVER_CONFIG_INIT(&config, NULL)`（无 EvtDeviceAdd），创建 `\Device\RamFanVirtTemp`（SDDL 限 SYSTEM/管理员、独占、串行队列 passive、显式 `WdfDeviceConfigureRequestDispatching`）。保留 EvtDriverUnload 删除控制设备。新增驱动级活动用户 rundown（Begin/EndIo + 卸载等待归零）。
+- **PnP 骨架已删除**：`resource_model.c/.h`、`test-resource-model.c/.ps1`、`install-test.ps1`、`uninstall.ps1`、`QUERY_RESOURCE` IOCTL 全部移除（实验 B/C 已证伪模型，不得保留误导性代码）。
+- **只读身份门禁**（新增 `driver/identity_model.c/.h` 纯逻辑判定 + `driver/hw.c` 白名单探针）：`IOCTL_RAMFAN_QUERY_HW` 执行 PCI 配置读取（`DEV_790B` 存在性 + BAR0 信息）与标准 SIO `0x2e/0x2f` 解锁→读 chip id→锁定；`HwMatched`=控制器存在 && chip id==0xd802。不访问 SMBus 事务寄存器、不写 `0x295/0x296`、不写 page `0x0c`。`READ_DIMM_TEMP` 与 `FEED_ONCE` 无条件阻断（状态 4）。
+- **QUERY_HW_OUT 扩展**：新增 ControllerFound/ChipIdValid/Reserved；服务 `--identity` 模式（0=匹配/1=失败/2=参数错误）执行只读检查，`--once`/`--install`/`--uninstall` 仍禁用。
+- **新增机主脚本**：`identity-gate-prep.ps1`（环境检查→`/ph` 签名→复制到 System32\drivers→`sc create RAMFanPnP` kernel→启动→运行 `--identity`）与 `identity-gate-rollback.ps1`（停删服务+删文件）。实验 B 脚本标注为历史工具。`WINDOWS.md` 重写为新模型文档。
+- **验证**：驱动/服务 x64 Debug、Release 双配置构建通过；`test-identity-model.ps1`（修复 ChipIdValid 语义：任一字节 0xff 视为探针失败后通过）与 `test-smbus-model.ps1` 全绿。
+- **子代理独立审查**：无严重问题。已修复 [中等] M1（`RamFanEndIo` 移到 `WdfRequestComplete` 之后，避免 EndIo 归零到 Complete 之间的设备删除竞态）、[轻微] L7（`RamFanCreateDevice` 失败路径显式 `WdfObjectDelete`）；L2 过时阶段注释已清理。L3（服务名 RAMFanPnP 沿用历史名）与 L4（`HalGetBusDataByOffset` 跨 bus 覆盖需实机确认）记为已知依赖，在实机运行时记录。
+- **下一步**：机主执行 `patch/windows/identity-gate-prep.ps1 -Configuration Release`，记录 QUERY_HW 结果（预期 ChipId=d802、ControllerFound=1、HwMatched=1），任何身份误判即回到 Linux 交付；通过后经独立审查再申请 §5.2 第 2 步 SMBus 试验批准。
 
 ## 参考资料
 

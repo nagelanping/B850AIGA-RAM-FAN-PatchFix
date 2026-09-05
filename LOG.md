@@ -194,6 +194,7 @@ outb((v & 0xf0) | page, 0x296)
 - 已实现 active-user/rundown 生命周期门：控制设备队列显式设置为 `WdfExecutionLevelPassive`；硬件事务开始时在全局 wait-lock 下检查 Ready/冲突/Removing 并递增活动计数，结束时递减并在归零时发信号。
 - `ReleaseHardware` 通过 `Removing=TRUE` 阻止新事务，清除资源登记后等待活动计数归零，再释放 owner 引用；因此后续真实端口事务必须完整包在 begin/end 之间。
 - 当前 `FEED_ONCE` 仍无条件返回 `RAMFAN_FEED_HW_UNAVAILABLE`，不会进行端口访问、SMBus 事务或 NCT 写入。
+- 新增 `patch/windows/test-smbus-model.ps1` 纯逻辑自检：验证 `HST_STS=0x02`（含其他无错误位）为成功、BUSY 优先、`0x04` 为错误、SPD 地址顺序、温度换算和 `0..120°C` 边界。脚本不打开设备、不访问端口、不加载驱动。
 ## 参考资料
 
 - `WORKFLOW.md`：Windows 当前实施和验收流程。

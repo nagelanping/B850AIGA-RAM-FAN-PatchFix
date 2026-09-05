@@ -62,13 +62,15 @@ INF 的 Models section 只能按设备报告的 hardware ID/compatible ID 匹配
 4. 完成 catalog、签名、DriverStore 安装和可回滚卸载后，才能恢复安装入口。
 
 控制设备队列显式运行在 `WdfExecutionLevelPassive`。已实现 active-user/rundown 生命周期门：事务开始在全局 wait-lock 下检查 Ready/冲突/Removing 并计数，`ReleaseHardware` 设置 Removing、阻止新事务、等待活动计数归零后才返回。真实端口事务接入时必须完整包在 begin/end 之间；当前仍不访问端口。
+
+可在不安装驱动、不打开设备句柄的情况下运行 `pwsh -NoProfile -File .\test-smbus-model.ps1`。该脚本只验证 HST 状态分类、温度换算、温度范围和 SPD 地址顺序，不代表真实 SMBus 访问已通过。
 目标机当前只允许执行只读资源收集脚本；不要执行安装、启动驱动或 `--once`。
 
 ## 验证（当前禁止安装/加载）
 
-资源识别骨架和 INF 尚未完成独立审查，当前不执行安装、驱动启动、服务启动或 `--once`。只允许运行 `collect-resource-info.ps1`。
+资源识别骨架和 INF 尚未完成独立审查，当前不执行安装、驱动启动、服务启动或 `--once`。目标机只允许运行 `collect-resource-info.ps1`；本地可运行纯逻辑自检。
 
-当前版本无可执行验证命令；待 INF、资源共享状态和回滚流程完成后重新补充。
+当前只有 `test-smbus-model.ps1` 纯逻辑自检，没有真实硬件验证命令；待 INF、资源共享状态和回滚流程完成后再安排只读 PnP 验证。
 
 验收点：
 

@@ -1,9 +1,9 @@
-# ramfan（Windows 补丁）— 阶段 2：一次性写回闭环
+# ramfan（Windows 补丁）— 阶段 2：资源模型硬化
 
 把 DIMM 温度持续喂给 NCT6796D 的 `Virtual_TEMP`（SIO 页 `0x0c` reg `0x36`），
 使 `FAN5=MEM_FAN` 在 BIOS 数据源为“内存温度”时按 BIOS 曲线运行。
 
-**当前阶段（阶段 2 草稿）**：接口和服务入口已保留，但写回被资源门禁明确阻断；
+**当前阶段**：接口和服务入口已保留，但写回被资源门禁明确阻断；
 `FEED_ONCE` 在未获得 translated resources 前只返回硬件不可用，不访问端口、不写 NCT。
 服务常驻仍保持阶段 1 的只读检查，0.5 秒常驻喂值留在阶段 3。
 实机安装、驱动加载及 NCT/风扇验证按项目计划推迟到代码大致完成后。
@@ -11,7 +11,8 @@
 
 | 组件 | 文件 | 说明 |
 | ---- | ---- | ---- |
-| 内核驱动 | `driver/ramfan.c` | KMDF PnP upper-filter 骨架；绑定设计暂存于 `ramfan.inf.disabled`，只登记 translated port resources，不访问硬件 |
+| 内核驱动 | `driver/ramfan.c`、`driver/resource_model.c` | KMDF PnP upper-filter 骨架；绑定设计暂存于 `ramfan.inf.disabled`，只登记 translated port resources，不访问硬件 |
+| 资源模型 | `driver/resource_model.h`、`driver/resource_model.c` | 驱动实际调用的无 WDF 资源分类和事务门禁纯逻辑 |
 | 共享定义 | `driver/ramfan_ioctl.h` | IOCTL 与资源识别范围常量 |
 | 用户态服务 | `service/ramfan-service.c` | `--once`、`--install`、`--uninstall` 当前拒绝；默认 SCM 模式仍只做阶段 2只读检查 |
 | 构建 | `build.ps1` | 定位 VS/WDK，x64 Debug/Release；不复制 INF |
@@ -61,16 +62,32 @@ INF 的 Models section 只能按设备报告的 hardware ID/compatible ID 匹配
 3. 非目标实例、资源缺失、资源歧义或资源角色不符时拒绝处理并保持不可用；在 filter 栈行为验证证明无副作用前不得安装；
 4. 完成 catalog、签名、DriverStore 安装和可回滚卸载后，才能恢复安装入口。
 
-控制设备队列显式运行在 `WdfExecutionLevelPassive`。已实现 active-user/rundown 生命周期门：事务开始在全局 wait-lock 下检查 Ready/冲突/Removing 并计数，`ReleaseHardware` 设置 Removing、阻止新事务、等待活动计数归零后才返回。真实端口事务接入时必须完整包在 begin/end 之间；当前仍不访问端口。
+### 绑定决策与角色规则（2026-09-05）
+
+- 绑定主路径 (a)：通用 `ACPI\PNP0C02` INF upper-filter + 运行时按实例 ID 允许表与 translated resources 做双重拒绝式筛选；备选 (b) SetupAPI `SPDRP_UPPERFILTERS` 只对 `\700`/`\0` 两个实例做 per-device filter，仅当 (a) 在实机证伪时启用。
+- 实机证据映射：`PNP0C02\700` 同时覆盖 SMBus `0x0b00-0x0b0f` 与标准 SIO `0x2e/0x2f`（其 `0x22-0x3f` 声明范围内）；`PNP0C02\0` 的声明含 NCT 自定义口 `0x290-0x29f`（另有无关的 `0x200-0x23f`）。
+- 角色规则（`resource_model.c` `RamFanResourceMapSelectRole`）已按证据修正：SMBUS 角色容忍标准 SIO 共存且不再要求“无 SIO/无 SIO 歧义”，NCT 角色不再要求本实例含标准 SIO。修正前两实例都会因规则冲突得到 `RAMFAN_ROLE_NONE`，驱动永远无法 Ready。
+- SIO 授权记账随覆盖它的角色实例登记与清空（实机为 `\700` 的 SMBUS 角色）；NCT 角色不再登记/清理 SIO。身份探针从事务快照取 SIO 基址，仅在首个 FEED_ONCE 事务内执行一次。
+- 未解疑点（决定能否继续）：`PNP0C02\0` 状态为 PnP Stopped，upper-filter 需该节点被带动 start 才会收到 `EvtDevicePrepareHardware`。下一步由机主执行只读清单 A 与可逆加载实验 B（完整命令与失效条件见根目录 LOG.md 2026-09-05 决策段）；出现失效条件即触发 WORKFLOW.md §7 转向，不静默继续。
+
+控制设备队列显式运行在 `WdfExecutionLevelPassive`。已实现 active-user/rundown 生命周期门：事务开始在全局 wait-lock 下检查两个角色均 Ready 且无冲突并计数，`ReleaseHardware` 先清除对应角色 Ready，再等待活动计数归零后才返回。释放一个角色不会留下错误的全局 Removing 状态；真实端口事务接入时必须完整包在 begin/end 之间，当前仍不访问端口。
 
 可在不安装驱动、不打开设备句柄的情况下运行 `pwsh -NoProfile -File .\test-smbus-model.ps1`。该脚本只验证 HST 状态分类、温度换算、温度范围和 SPD 地址顺序，不代表真实 SMBus 访问已通过。
+
+资源分类和事务门禁可用本机 MSVC 自检：
+
+```powershell
+pwsh -NoProfile -File .\test-resource-model.ps1
+```
+
+该自检编译并运行驱动实际使用的 `resource_model.c`，覆盖完整/部分/重复资源、角色分离、已知 `0x0200-0x023f` 范围、`UINT64` 地址边界，以及 Begin → 一侧释放 → 新 Begin 拒绝 → End 的活动用户时序；不加载驱动、不打开设备、不访问端口。
 目标机当前只允许执行只读资源收集脚本；不要执行安装、启动驱动或 `--once`。
 
 ## 验证（当前禁止安装/加载）
 
 资源识别骨架和 INF 尚未完成独立审查，当前不执行安装、驱动启动、服务启动或 `--once`。目标机只允许运行 `collect-resource-info.ps1`；本地可运行纯逻辑自检。
 
-当前只有 `test-smbus-model.ps1` 纯逻辑自检，没有真实硬件验证命令；待 INF、资源共享状态和回滚流程完成后再安排只读 PnP 验证。
+当前有 `test-smbus-model.ps1` 和 `test-resource-model.ps1` 两个纯逻辑自检，没有真实硬件验证命令；待 INF、资源共享状态和回滚流程完成后再安排只读 PnP 验证。
 
 验收点：
 

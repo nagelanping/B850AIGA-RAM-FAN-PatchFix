@@ -6,6 +6,7 @@
 #include <ntddk.h>
 #include <wdf.h>
 #include "ramfan_ioctl.h"
+#include "resource_model.h"
 
 /* ---- 回调前置声明 ---- */
 DRIVER_INITIALIZE DriverEntry;

@@ -75,11 +75,13 @@
 
   <ItemGroup>
     <ClCompile Include="ramfan.c" />
+    <ClCompile Include="resource_model.c" />
   </ItemGroup>
 
   <ItemGroup>
     <ClInclude Include="ramfan.h" />
     <ClInclude Include="ramfan_ioctl.h" />
+    <ClInclude Include="resource_model.h" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

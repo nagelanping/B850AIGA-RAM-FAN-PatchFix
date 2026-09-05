@@ -108,6 +108,7 @@ Windows 版本优先采用 **KMDF 内核驱动 + Windows Service**，不把 WinR
 - Windows 中 SPD 7-bit 地址和 SMBus 写入地址字节不要混淆：`0x53` 对应读地址字节 `0xa7`；固件记录的 `0xa6` 是另一种写格式表示。
 - Ghidra 12.1.2 与 JDK26 不兼容；固件分析使用已有 objdump/flat-image 结果，不为 Windows 开发重复建立 Ghidra 流程。
 - 系统无 `xxd` 时使用 `od`。
+- Windows PNP0C02 目标实例不跨实例合并：实机 `\700` 的声明范围同时覆盖 SMBus `0xb00-0xb0f` 与标准 SIO `0x2e/0x2f`（在 `0x22-0x3f` 内），`\0` 的声明含 NCT `0x290-0x29f`（另有无关的 `0x200-0x23f`）；SMBUS/NCT 角色分类不得要求 NCT 实例自带标准 SIO，也不要把含 SIO 的 `\700` 判为不合法的 SMBus 实例。
 
 ## 工作规则
 

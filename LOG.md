@@ -4,7 +4,7 @@
 
 - **Linux 0.1 已归档**：实现和完整 Linux 工作记录位于 `archive/0.1/linux/`；发布包仍在 `release/linux/`。
 - **当前工作目标**：实现 Windows KMDF 内核驱动 + Windows Service，持续向 NCT `Virtual_TEMP` 喂入 DIMM 温度。
-- **当前阶段**：Windows 阶段 2资源识别骨架已提交，尚未恢复 SMBus/NCT 访问；Debug/Release 构建通过。资源所有权、INF 绑定、catalog/签名和回滚仍未满足安装门槛。
+- **当前阶段**：Windows 阶段 2 资源绑定路径已决策（通用 PNP0C02 upper-filter + 运行时双门禁；备选 per-device UpperFilters），角色分类规则已按实机证据修正并通过无硬件自检；尚未恢复 SMBus/NCT 访问。下一步需机主执行只读清单 A 与可逆加载实验 B（见下）。资源所有权、INF 绑定、catalog/签名和回滚仍未满足安装门槛。
 ## 根因与目标链路
 
 
@@ -195,6 +195,26 @@ outb((v & 0xf0) | page, 0x296)
 - `ReleaseHardware` 通过 `Removing=TRUE` 阻止新事务，清除资源登记后等待活动计数归零，再释放 owner 引用；因此后续真实端口事务必须完整包在 begin/end 之间。
 - 当前 `FEED_ONCE` 仍无条件返回 `RAMFAN_FEED_HW_UNAVAILABLE`，不会进行端口访问、SMBus 事务或 NCT 写入。
 - 新增 `patch/windows/test-smbus-model.ps1` 纯逻辑自检：验证 `HST_STS=0x02`（含其他无错误位）为成功、BUSY 优先、`0x04` 为错误、SPD 地址顺序、温度换算和 `0..120°C` 边界。脚本不打开设备、不访问端口、不加载驱动。
+
+## 2026-09-05 资源模型硬化（未恢复硬件访问）
+
+> 注意：本节“NCT 角色仍要求同实例含 `0x2e/0x2f`”的描述已被同日下一条“资源绑定路径决策与角色规则修正”推翻（NCT 角色不再要求本实例含标准 SIO）。
+
+- 将 translated port 资源分类抽到 `patch/windows/driver/resource_model.c/.h`；PnP 回调现在只过滤端口 descriptor、拒绝负地址，再调用驱动实际使用的纯逻辑分类函数。
+- 分类模型保留原有安全语义：完整覆盖才命中，部分重叠或重复 descriptor 标记歧义；SMBus、NCT 和标准 SIO 资源不会跨 PnP 实例自动合并；NCT 角色仍要求同一资源实例同时提供 `0x0290-0x029f` 和 `0x002e-0x002f`。
+- 移除全局 `Removing` 门闩；事务门禁现在只在 SMBus/NCT 两个角色均 Ready 且无冲突时允许开始。释放任一角色只清除该角色并等待活动用户归零，不会残留阻断另一角色的全局状态。冲突 sticky 语义未改变。
+- 新增 `patch/windows/test-resource-model.ps1` 及 `test-resource-model.c`，测试驱动实际调用的资源分类和事务门禁，覆盖完整/部分/重复资源、角色分离、已知 `0x0200-0x023f` 范围、`UINT64` 地址边界，以及 Begin → 一侧释放 → 新 Begin 拒绝 → End 的活动用户时序；不加载驱动、不打开设备、不访问端口。
+- 验证通过：`test-smbus-model.ps1`、`test-resource-model.ps1`，以及驱动/服务 x64 Debug、Release 构建。INF 仍为 `.inf.disabled`，安装/卸载脚本仍拒绝执行，`FEED_ONCE` 仍返回 `RAMFAN_FEED_HW_UNAVAILABLE`。
+- 未解决阻塞：PNP0C02 upper-filter 的精确绑定、translated resource 与独占访问的关系、标准 SIO `0x2e/0x2f` 的合法资源授权、catalog/签名/回滚；因此不安排机主安装或真实端口测试。
+## 2026-09-05 资源绑定路径决策与角色规则修正（仍无实机安装）
+
+- 独立规划子代理结合实机证据给出决策：**绑定主路径 (a)** 通用 `ACPI\PNP0C02` INF upper-filter + 运行时按实例 ID 允许表与资源分类双门禁；(b) SetupAPI `SPDRP_UPPERFILTERS` per-device 只绑 `\700`/`\0` 作为 (a) 实机证伪后的备选。PCI 790B upper-filter、替换功能驱动、非 PnP 自声明端口均排除。
+- **角色分类与实机证据冲突已修正**（根因）：实机 `PNP0C02\700` 的 `0x22-0x3F` 覆盖标准 SIO `0x2e/0x2f`，旧规则“SMBUS 角色不得含 SIO”会拒绝 `\700`；`PNP0C02\0` 只有 `0x290-0x29f` 无 SIO，旧规则“NCT 角色必须含 SIO”会拒绝 `\0`。修正后：SMBUS 角色容忍 SIO 共存且不检查 SIO 歧义，NCT 角色不再要求 SIO；两实例在实机证据下分别可获得 SMBUS 与 NCT 角色。
+- SIO 授权记账改为随覆盖它的角色实例登记（实机为 `\700` 的 SMBUS 角色，完整覆盖且不歧义才记录），该实例释放时一并清空；NCT 角色不再登记/清理 SIO。身份探针仍从事务快照取 SIO 基址，仅在首个 FEED_ONCE 事务内执行一次。
+- host 测试同步修正：新增仿 `\700`（SMBus+SIO+无关范围 → SMBUS 角色）与仿 `\0`（0x200-0x23f+0x290 无 SIO → NCT 角色）用例；原先“NCT 无 SIO → NONE”的错误假设断言已反转。`test-resource-model.ps1`、`test-smbus-model.ps1`、驱动/服务 x64 Debug 与 Release 构建均通过。
+- 关键未解疑点：实机 `PNP0C02\0` 状态为 PnP Stopped/查询 OK，upper-filter 只有在该节点被带动 start 时才会收到 `EvtDevicePrepareHardware`；若无法启动则 NCT 授权路径失效。translated resource 只证明该 devnode 获得该范围，不等于独占授权，不证明功能驱动/固件不访问。
+- 决策子代理建议：本会话只做上述纯逻辑修正并保持门禁；下一步先由机主执行只读清单 A（全系统 PNP0C02 计数、两节点 `/resources` `/problem`、Service/UpperFilters/LowerFilters/ConfigFlags 注册表、790B 驱动名），再视批准执行可逆加载实验 B（测试签名 + `pnputil /add-driver /install` + 逐节点 restart/enable + 只读 IOCTL + 回滚要点）。失效条件：任何非目标 PNP0C02 挂 filter 后新增 problem、目标节点 start 失败且 restart/enable 无法恢复、重启后 translated list 不含目标范围、SetupAPI 写 UpperFilters 被拒或重启后丢失，或只读探测发现 HST 被独占/不稳定——任一出现即记录并触发 WORKFLOW.md §7 转向，不静默继续。
+- 门禁状态不变：`FEED_ONCE` 仍返回 `RAMFAN_FEED_HW_UNAVAILABLE`，INF 维持 `.inf.disabled`，install/uninstall 脚本仍拒绝，未安装驱动、未访问端口、未写 NCT。
 ## 参考资料
 
 - `WORKFLOW.md`：Windows 当前实施和验收流程。

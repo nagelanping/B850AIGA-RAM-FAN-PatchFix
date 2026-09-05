@@ -4,7 +4,7 @@
 
 - **Linux 0.1 已归档**：实现和完整 Linux 工作记录位于 `archive/0.1/linux/`；发布包仍在 `release/linux/`。
 - **当前工作目标**：实现 Windows KMDF 内核驱动 + Windows Service，持续向 NCT `Virtual_TEMP` 喂入 DIMM 温度。
-- **当前阶段**：机主已于 2026-09-05 批准**受控非 PnP 访问模型**实验例外。实机身份门禁两轮失败后修正：① `HalGetBusDataByOffset` 读不到 PCI 配置空间 → 改读 `Enum\PCI`；② `Enum\PCI` 下无裸 `VEN_1022&DEV_790B` 键（子键为完整 hardware id）→ 改为**枚举子键前缀匹配**。当前修正已编译、镜像自检通过，待机主再次重启换驱动验证。
+- **当前阶段**：§5.2 第 1 步**只读身份门禁已实机验证通过**（`ChipId=d802 ControllerFound=1 ChipIdValid=1 HwMatched=1`，2026-09-05）。NCT chip id 0xd802 经标准 SIO 0x2e/0x2f 在 Windows 实机首次确认；`DEV_790B` 存在性经 `Enum\PCI` 前缀枚举确认。`READ_DIMM_TEMP` / `FEED_ONCE` 保持阻断。下一步：机主批准 §5.2 第 2 步受控 SMBus 试验。
 ## 根因与目标链路
 
 
@@ -78,7 +78,7 @@ outb((v & 0xf0) | page, 0x296)
 2. ✅ 准备 VS + SDK + WDK（VS 2026 Community 18.9 / SDK 10.0.26100 已装；WDK 10.0.26100 安装中）；阶段 1 工程已建。
 3. ✅ 阶段 1 代码：驱动加载/卸载、硬件识别、设备句柄、只读 SMBus IOCTL；待构建与实机验证（禁止写 NCT）。
 4. ✅ 2026-09-05：机主批准受控非 PnP 模型；驱动重构为非 PnP 控制设备 + 只读身份门禁（§5.2 第 1 步），已构建、纯逻辑自检与子代理审查通过，见 LOG 末尾 2026-09-05 条目。
-5. 机主执行 `patch/windows/identity-gate-prep.ps1`：加载驱动并运行 `--identity`，记录 QUERY_HW 结果与风险后写回 LOG。
+5. ✅ 2026-09-05：身份门禁实机验证通过（`HwMatched=1`），结果见 LOG 末尾；回滚完成。
 6. 受控 SMBus 试验（§5.2 第 2 步，读 DIMM）：需机主单独批准后再实现。
 7. 写回（`FEED_ONCE`）与常驻服务（阶段 3/4）：逐级批准 + 独立审查 + 实机证据后恢复。
 
@@ -290,8 +290,9 @@ outb((v & 0xf0) | page, 0x296)
 - **修正（第一轮）**：`hw.c` 改为只读注册表 `Enum\PCI\VEN_1022&DEV_790B`（键存在即已枚举）。重启后加载实测仍 `ControllerFound=0`。
 - **根因（第二轮）**：`Enum\PCI` 下不存在裸 `VEN_1022&DEV_790B` 键；子键是完整 hardware id `VEN_1022&DEV_790B&SUBSYS_07606688&REV_71`（用户态枚举确认只有该子键）。直接按裸前缀开键必然失败。
 - **修正（第二轮）**：`RamFanProbeFchSmbusController` 改为枚举 `Enum\PCI` 子键做 `VEN_1022&DEV_790B` 前缀匹配（`ZwQueryKey`+`ZwEnumerateKey`+`RtlPrefixUnicodeString`，被动池分配、逐项释放）。镜像自检 `test-enum-790b.ps1` 确认前缀匹配命中。
-- **驱动卸载受阻（两轮均同）**：已加载二进制 `sc stop` 返回 1052 无法卸载，SYSTEM32\drivers\ramfan.sys 被占用，需重启换驱动（与实验 B 换驱动经验一致）。驱动只读且未写任何值，无风险。
-- **待办**：机主再次重启 → agent 重新执行 `identity-gate-prep.ps1` 验证（预期 `ChipId=d802 ControllerFound=1 HwMatched=1`）。
+- **驱动卸载受阻（三轮均同）**：已加载二进制 `sc stop` 返回 1052 无法卸载，SYSTEM32\drivers\ramfan.sys 被占用，只能重启换驱动（实验 B 已见模式）。服务注册表项删除后重启不会自动加载；文件在重启后即可移除。
+- **最终验证（第三轮，重启后）**：`identity-gate-prep.ps1 -Configuration Release` 输出 **`SMBusBase=0x0b00 ChipId=d802 ControllerFound=1 ChipIdValid=1 HwMatched=1`**，身份门禁通过。PCI DEV_790B（Enum\PCI 前缀枚举）与 NCT chip id 0xd802（0x2e/0x2f，Windows 实机首次验证）双证据成立。回滚后服务项删除、驱动文件待重启释放（已删服务不会自载，无残留风险）。
+- **结论**：§5.2 第 1 步只读身份门禁在目标机验证通过。下一步需机主批准 §5.2 第 2 步受控 SMBus 试验（读 DIMM，涉及事务寄存器写入），经独立审查后实现。
 
 ## 参考资料
 

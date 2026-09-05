@@ -189,6 +189,11 @@ outb((v & 0xf0) | page, 0x296)
 - Microsoft INF Models section 按 hardware ID/compatible ID 匹配；当前 `ACPI\PNP0C02` 通用 hardware ID 项不能仅凭 INF 区分实机实例 `\700` 与 `\0`。
 - 因此 `ramfan.inf.disabled` 继续保持不可安装状态；不能把当前通用 hardware ID upper-filter 当作目标机安装包，也不能仅通过拆分 INF 文件宣称实现精确实例绑定。
 - 后续若继续采用 PNP0C02 upper-filter，必须在驱动运行时同时按实例 ID 和 translated resources 做拒绝式筛选，并完成 filter 栈、catalog、签名、DriverStore 安装和回滚验证后才可解除安装门禁。
+## 2026-09-05 控制设备资源快照协议
+
+- 控制设备与 PnP 资源上下文的实际快照/活动事务协议尚未实现；当前不在 IOCTL 中获取或引用 PnP 资源，避免把 WDF 对象引用误当作 translated resource 生命周期保护。
+- 后续恢复硬件访问前必须实现 active-user/rundown 或持锁完整事务：`ReleaseHardware` 需等待活动硬件事务结束后才能使资源失效。
+- 当前 `FEED_ONCE` 仍无条件返回 `RAMFAN_FEED_HW_UNAVAILABLE`，不会进行端口访问、SMBus 事务或 NCT 写入。
 ## 参考资料
 
 - `WORKFLOW.md`：Windows 当前实施和验收流程。

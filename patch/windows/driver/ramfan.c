@@ -60,11 +60,11 @@ typedef struct _RAMFAN_GLOBAL_CONTEXT {
     BOOLEAN NctConflict;
 } RAMFAN_GLOBAL_CONTEXT;
 
-WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(RAMFAN_GLOBAL_CONTEXT, RamFanGetGlobalContext);
-
 #define RAMFAN_ROLE_NONE  0
 #define RAMFAN_ROLE_SMBUS 1
 #define RAMFAN_ROLE_NCT   2
+
+WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(RAMFAN_GLOBAL_CONTEXT, RamFanGetGlobalContext);
 
 static BOOLEAN
 RamFanResourceContains(PCM_PARTIAL_RESOURCE_DESCRIPTOR Descriptor,
@@ -514,13 +514,8 @@ RamFanCreateDevice(WDFDRIVER Driver)
 /* ---- 阶段 2：一次完整读取、校验、写回 ---- */
 static NTSTATUS
 RamFanFeedOnce(RAMFAN_DEVICE_EXTENSION *ext,
-                RAMFAN_FEED_ONCE_OUT *out)
+               RAMFAN_FEED_ONCE_OUT *out)
 {
-    /*
-     * 当前为 PnP 资源识别骨架；FEED_ONCE 尚未接入资源上下文。
-     * translated resources 只做登记，旧 hw.c 访问路径已断开；绝不在此阶段访问端口或写 NCT。
-     * 资源模型和后续硬件闭环未完成时，FEED_ONCE 必须在任何硬件访问前失败。
-     */
     UNREFERENCED_PARAMETER(ext);
     out->Status = RAMFAN_FEED_HW_UNAVAILABLE;
     return STATUS_SUCCESS;

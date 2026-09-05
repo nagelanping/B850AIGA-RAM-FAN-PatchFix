@@ -60,6 +60,8 @@ INF 的 Models section 只能按设备报告的 hardware ID/compatible ID 匹配
 2. 驱动运行时根据实际实例 ID 和 translated resources 做双重拒绝式筛选；
 3. 非目标实例、资源缺失、资源歧义或资源角色不符时拒绝处理并保持不可用；在 filter 栈行为验证证明无副作用前不得安装；
 4. 完成 catalog、签名、DriverStore 安装和可回滚卸载后，才能恢复安装入口。
+
+控制设备与 PnP 资源上下文的活动事务协议尚未实现；WDF 对象引用不能延长 translated resources 的有效期。恢复硬件访问前必须增加 active-user/rundown 或持锁完整事务，让 `ReleaseHardware` 等待活动事务结束。当前探针不访问端口。
 目标机当前只允许执行只读资源收集脚本；不要执行安装、启动驱动或 `--once`。
 
 ## 验证（当前禁止安装/加载）

@@ -58,6 +58,9 @@ typedef struct _RAMFAN_GLOBAL_CONTEXT {
     BOOLEAN NctReady;
     BOOLEAN SmbusConflict;
     BOOLEAN NctConflict;
+    BOOLEAN Removing;
+    ULONG ActiveUsers;
+    KEVENT ActiveUsersZero;
 } RAMFAN_GLOBAL_CONTEXT;
 
 #define RAMFAN_ROLE_NONE  0
@@ -65,6 +68,55 @@ typedef struct _RAMFAN_GLOBAL_CONTEXT {
 #define RAMFAN_ROLE_NCT   2
 
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(RAMFAN_GLOBAL_CONTEXT, RamFanGetGlobalContext);
+
+typedef struct _RAMFAN_TRANSACTION {
+    ULONG SmbusStart;
+    ULONG SmbusLength;
+    ULONG NctStart;
+    ULONG NctLength;
+    ULONG StandardSioStart;
+    ULONG StandardSioLength;
+} RAMFAN_TRANSACTION;
+
+static BOOLEAN
+RamFanBeginHardwareTransaction(WDFDEVICE ControlDevice,
+                               RAMFAN_TRANSACTION *Transaction)
+{
+    RAMFAN_GLOBAL_CONTEXT *global;
+    BOOLEAN acquired = FALSE;
+
+    global = RamFanGetGlobalContext(WdfDeviceGetDriver(ControlDevice));
+    RtlZeroMemory(Transaction, sizeof(*Transaction));
+    WdfWaitLockAcquire(global->Lock, NULL);
+    if (!global->Removing && global->SmbusReady && !global->SmbusConflict &&
+        global->NctReady && !global->NctConflict) {
+        if (global->ActiveUsers++ == 0) {
+            KeClearEvent(&global->ActiveUsersZero);
+        }
+        Transaction->SmbusStart = global->SmbusStart;
+        Transaction->SmbusLength = global->SmbusLength;
+        Transaction->NctStart = global->NctStart;
+        Transaction->NctLength = global->NctLength;
+        Transaction->StandardSioStart = global->StandardSioStart;
+        Transaction->StandardSioLength = global->StandardSioLength;
+        acquired = TRUE;
+    }
+    WdfWaitLockRelease(global->Lock);
+    return acquired;
+}
+
+static VOID
+RamFanEndHardwareTransaction(WDFDEVICE ControlDevice)
+{
+    RAMFAN_GLOBAL_CONTEXT *global;
+
+    global = RamFanGetGlobalContext(WdfDeviceGetDriver(ControlDevice));
+    WdfWaitLockAcquire(global->Lock, NULL);
+    if (global->ActiveUsers != 0 && --global->ActiveUsers == 0) {
+        KeSetEvent(&global->ActiveUsersZero, IO_NO_INCREMENT, FALSE);
+    }
+    WdfWaitLockRelease(global->Lock);
+}
 
 static BOOLEAN
 RamFanResourceContains(PCM_PARTIAL_RESOURCE_DESCRIPTOR Descriptor,
@@ -213,6 +265,7 @@ RamFanRegisterResources(WDFDEVICE Device, RAMFAN_PNP_CONTEXT *Context)
             global->SmbusReady = FALSE;
             /* 保留 owner/ref，交由原 owner 的 ReleaseHardware 配对释放。 */
         } else {
+            global->Removing = FALSE;
             global->SmbusDevice = Device;
             global->SmbusStart = Context->SmbusStart;
             global->SmbusLength = Context->SmbusLength;
@@ -228,6 +281,7 @@ RamFanRegisterResources(WDFDEVICE Device, RAMFAN_PNP_CONTEXT *Context)
             global->NctReady = FALSE;
             /* 保留 owner/ref，交由原 owner 的 ReleaseHardware 配对释放。 */
         } else {
+            global->Removing = FALSE;
             global->NctDevice = Device;
             global->NctStart = Context->NctStart;
             global->NctLength = Context->NctLength;
@@ -246,12 +300,15 @@ static VOID
 RamFanUnregisterResources(WDFDEVICE Device, RAMFAN_PNP_CONTEXT *Context)
 {
     RAMFAN_GLOBAL_CONTEXT *global;
+    BOOLEAN waitForUsers = FALSE;
 
     global = RamFanGetGlobalContext(WdfDeviceGetDriver(Device));
     WdfWaitLockAcquire(global->Lock, NULL);
 
     if (Context->Role == RAMFAN_ROLE_SMBUS &&
         global->SmbusDevice == Device) {
+        global->Removing = TRUE;
+        waitForUsers = TRUE;
         global->SmbusDevice = NULL;
         global->SmbusStart = 0;
         global->SmbusLength = 0;
@@ -259,6 +316,8 @@ RamFanUnregisterResources(WDFDEVICE Device, RAMFAN_PNP_CONTEXT *Context)
         /* 冲突一旦发生，本次驱动生命周期内不重新授权。 */
     } else if (Context->Role == RAMFAN_ROLE_NCT &&
                global->NctDevice == Device) {
+        global->Removing = TRUE;
+        waitForUsers = TRUE;
         global->NctDevice = NULL;
         global->NctStart = 0;
         global->NctLength = 0;
@@ -269,6 +328,14 @@ RamFanUnregisterResources(WDFDEVICE Device, RAMFAN_PNP_CONTEXT *Context)
     }
 
     WdfWaitLockRelease(global->Lock);
+
+    if (waitForUsers) {
+        KeWaitForSingleObject(&global->ActiveUsersZero,
+                              Executive,
+                              KernelMode,
+                              FALSE,
+                              NULL);
+    }
 
     if (Context->RegisteredReference) {
         Context->RegisteredReference = FALSE;
@@ -307,6 +374,7 @@ DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
         return status;
     }
 
+    KeInitializeEvent(&global->ActiveUsersZero, NotificationEvent, TRUE);
     /* 控制设备不承载端口资源；其 IOCTL 仍在安全阻断状态。 */
     return RamFanCreateDevice(driver);
 }
@@ -500,6 +568,7 @@ RamFanCreateDevice(WDFDRIVER Driver)
     queueConfig.PowerManaged = WdfFalse;
 
     WDF_OBJECT_ATTRIBUTES_INIT(&attrs);
+    attrs.ExecutionLevel = WdfExecutionLevelPassive;
     status = WdfIoQueueCreate(device, &queueConfig, &attrs, &ext->Queue);
     if (!NT_SUCCESS(status)) {
         return status;
@@ -516,7 +585,14 @@ static NTSTATUS
 RamFanFeedOnce(RAMFAN_DEVICE_EXTENSION *ext,
                RAMFAN_FEED_ONCE_OUT *out)
 {
-    UNREFERENCED_PARAMETER(ext);
+    RAMFAN_TRANSACTION transaction;
+
+    if (RamFanBeginHardwareTransaction(WdfIoQueueGetDevice(ext->Queue),
+                                        &transaction)) {
+        /* 真实事务接入前保持硬件访问门禁；事务生命周期仍已成对闭合。 */
+        UNREFERENCED_PARAMETER(transaction);
+        RamFanEndHardwareTransaction(WdfIoQueueGetDevice(ext->Queue));
+    }
     out->Status = RAMFAN_FEED_HW_UNAVAILABLE;
     return STATUS_SUCCESS;
 }

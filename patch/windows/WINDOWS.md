@@ -49,6 +49,17 @@ pwsh -File build.ps1 -Configuration Debug
 当前驱动已迁移为 PnP upper-filter 资源识别骨架，但 INF 绑定、PnP 回调生命周期和回滚流程尚未完成独立审查。为避免误改 `PNP0C02` 设备栈，`install-test.ps1` 当前会立即退出，不安装驱动、不修改 BCD、不注册服务。
 
 服务程序的 `--install` / `--uninstall` 入口也已禁用；当前不会通过任何入口修改 SCM。
+
+## PnP 绑定结论（当前暂停）
+
+INF 的 Models section 只能按设备报告的 hardware ID/compatible ID 匹配；实机的 `ACPI\PNP0C02\700` 和 `ACPI\PNP0C02\0` 不能仅靠当前 `ACPI\PNP0C02` 通用 hardware ID 项安全地区分。因此不能把 `ramfan.inf.disabled` 改成“精确匹配两个实例”的安装包，也不能直接安装现有 upper-filter。
+
+后续若继续使用 PNP0C02 upper-filter，必须同时满足：
+
+1. INF 绑定范围和 filter 栈行为先在隔离环境验证；
+2. 驱动运行时根据实际实例 ID 和 translated resources 做双重拒绝式筛选；
+3. 非目标实例、资源缺失、资源歧义或资源角色不符时拒绝处理并保持不可用；在 filter 栈行为验证证明无副作用前不得安装；
+4. 完成 catalog、签名、DriverStore 安装和可回滚卸载后，才能恢复安装入口。
 目标机当前只允许执行只读资源收集脚本；不要执行安装、启动驱动或 `--once`。
 
 ## 验证（当前禁止安装/加载）

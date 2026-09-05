@@ -184,6 +184,11 @@ outb((v & 0xf0) | page, 0x296)
 - 全局状态保存 SMBus/NCT/SIO 的固定资源快照，并对登记 owner 持有配对的 `WDFDEVICE` 引用；Prepare/Release 的登记与注销均受 wait-lock 保护。
 - 角色冲突会将对应 Ready 状态置为不可用，同时保留原 owner 的引用直到其 `ReleaseHardware` 配对释放；冲突在本次驱动生命周期内保持 sticky。
 - 以上状态仍未接入硬件访问；`FEED_ONCE`、`QUERY_HW`、`READ_DIMM_TEMP` 继续阻断，未安装、未访问真实端口。
+## 2026-09-05 PnP 绑定边界结论
+
+- Microsoft INF Models section 按 hardware ID/compatible ID 匹配；当前 `ACPI\PNP0C02` 通用 hardware ID 项不能仅凭 INF 区分实机实例 `\700` 与 `\0`。
+- 因此 `ramfan.inf.disabled` 继续保持不可安装状态；不能把当前通用 hardware ID upper-filter 当作目标机安装包，也不能仅通过拆分 INF 文件宣称实现精确实例绑定。
+- 后续若继续采用 PNP0C02 upper-filter，必须在驱动运行时同时按实例 ID 和 translated resources 做拒绝式筛选，并完成 filter 栈、catalog、签名、DriverStore 安装和回滚验证后才可解除安装门禁。
 ## 参考资料
 
 - `WORKFLOW.md`：Windows 当前实施和验收流程。

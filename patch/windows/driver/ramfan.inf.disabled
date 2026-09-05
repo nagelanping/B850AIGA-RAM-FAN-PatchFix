@@ -1,5 +1,9 @@
-; ramfan.inf — PnP upper-filter resource-identification skeleton
-; Development testing only. This package does not enable SMBus/NCT I/O or FEED_ONCE.
+; ramfan.inf.disabled — PnP upper-filter resource-identification design only
+; Design artifact only. Do not rename to .inf, pass to pnputil, install, or load.
+; The .disabled suffix is not a security boundary. The generic ACPI\PNP0C02
+; match cannot distinguish the confirmed instances \700 and \0 by itself.
+; The current driver build performs no SMBus/NCT I/O, but installing this
+; filter would still modify the PNP0C02 device stack.
 
 [Version]
 Signature="$WINDOWS NT$"

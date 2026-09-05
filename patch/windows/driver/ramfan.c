@@ -13,7 +13,8 @@
  *     确认已装 0x53/0x51、空槽 0x52/0x50（BUS_ERR+0x06）。
  *   - 第 3 步单次写回（2026-09-05 机主批准）：FEED_ONCE 读取→校验→最高温→
  *     NCT page 0x0c/reg 0x36 写回并读回校验；页保存/恢复在 hw.c。
- * 常驻 0.5s 喂值与 SCM 自动启动留后续阶段（需再批准）。
+ *   - 常驻喂值阶段（2026-09-05 机主批准）：服务端 0.5s 周期 FEED_ONCE 复用本驱动；
+ *     ctx->InstalledMask 收紧已装槽异常语义（M1-1）。SCM 仍 DEMAND_START。
  */
 #include "ramfan.h"
 
@@ -23,6 +24,11 @@ typedef struct _RAMFAN_DRIVER_CONTEXT {
     LONG ActiveUsers;
     KEVENT ActiveUsersZero;
     BOOLEAN Removing;          /* EvtDriverUnload 已开始 */
+    /* 已装 DIMM 映射（M1-1 收紧）：bit i = 槽 i（kSpdAddrs 顺序）本生命周期内至少
+     * 成功读取过一次（OK）。只由串行队列中的 FEED_ONCE 读写，无需额外锁。
+     * 首轮从零建立：真实已装槽实测恒 OK，空槽恒 BUS_ERR；若首轮某已装槽恰好
+     * BUS_ERR 会被漏（不写其温度），本机 6 轮实测无此情形，局限记录在案。 */
+    UCHAR InstalledMask;
 } RAMFAN_DRIVER_CONTEXT;
 
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(RAMFAN_DRIVER_CONTEXT, RamFanGetDriverContext);
@@ -109,13 +115,12 @@ RamFanQueryHw(RAMFAN_QUERY_HW_OUT *out)
  * 已在驱动锁/串行队列内。
  */
 static NTSTATUS
-RamFanReadDimmTemp(RAMFAN_READ_DIMM_OUT *out)
+RamFanReadDimmTemp(BOOLEAN gateDone, RAMFAN_READ_DIMM_OUT *out)
 {
     static const UCHAR kSpdAddrs[RAMFAN_SPD_ADDR_COUNT] = {
         RAMFAN_SPD_ADDR_53, RAMFAN_SPD_ADDR_52,
         RAMFAN_SPD_ADDR_51, RAMFAN_SPD_ADDR_50,
     };
-    RAMFAN_QUERY_HW_OUT hw;
     UCHAR maxC = 0;
     UCHAR anySuccess = 0;
     UCHAR count = 0;
@@ -124,15 +129,18 @@ RamFanReadDimmTemp(RAMFAN_READ_DIMM_OUT *out)
 
     RtlZeroMemory(out, sizeof(*out));
 
-    /* 身份门禁：每次读取前确认是目标机；不匹配则不做任何 SMBus 事务。 */
-    status = RamFanQueryHw(&hw);
-    if (!NT_SUCCESS(status)) {
-        return status;
+    /* 身份门禁：gateDone=FALSE（READ_DIMM_TEMP 单独调用）时才执行；
+     * FEED_ONCE 复用其前置门禁结果（gateDone=TRUE）避免常驻下每轮双重门禁。 */
+    if (!gateDone) {
+        RAMFAN_QUERY_HW_OUT hw;
+        status = RamFanQueryHw(&hw);
+        if (!NT_SUCCESS(status)) {
+            return status;
+        }
+        if (!hw.HwMatched) {
+            return STATUS_ACCESS_DENIED;
+        }
     }
-    if (!hw.HwMatched) {
-        return STATUS_ACCESS_DENIED;
-    }
-
     for (i = 0; i < RAMFAN_SPD_ADDR_COUNT; i++) {
         RAMFAN_DIMM_RESULT *slot = &out->Slots[i];
         USHORT raw = 0;
@@ -180,19 +188,21 @@ RamFanReadDimmTemp(RAMFAN_READ_DIMM_OUT *out)
     return STATUS_SUCCESS;
 }
 
-/* ---- FEED_ONCE：读取全部候选槽 → 校验 → 最高温 → NCT 写回并读回校验（§5.2 第 3 步） ----
+/* ---- FEED_ONCE：读取全部候选槽 → 校验 → 最高温 → NCT 写回并读回校验（§5.2 第 3 步 + 常驻映射） ----
  * 身份门禁不匹配（Status=3）时不返回槽数据、不做任何事务。
- * 槽语义（第 2 步已实机确认）：OK=已装有效；BUS_ERR(0x04/0x06)=空槽可忽略；
- * TIMEOUT=控制器忙或已装 DIMM 无响应（保守整体失败，不写）；BAD_DATA=读数越界异常。
- * 局限（M1-1，常驻阶段收紧）：BUS_ERR 同时覆盖已装槽的 CRC/总线异常（LOG 已确认 0x04
- * 不可区分），本函数把 BUS_ERR 一律当空槽忽略，若已装槽恰好 CRC 会用剩余槽喂值降速。
- * 本机 6 轮实测已装恒 OK、空槽恒 BUS_ERR，风险边界明确；常驻阶段须在驱动内建立
- * “已装地址映射”，映射内地址出现 BUS_ERR → 本轮整体失败。
- * 无成功槽 → READ_FAILED 不写；写回读回不一致 → WRITE_FAILED。不写猜测值、不写 0°C。
- * 调用方（EvtIoDeviceControl）在驱动锁/串行队列内。
+ * 已装映射（M1-1 收紧）：ctx->InstalledMask 记录本驱动生命周期内曾成功（OK）的槽。
+ *   - 每轮全读 4 槽；OK 槽加入 InstalledMask 并作温度样本。
+ *   - 曾 OK（已装确认）的槽本轮出现 BUS_ERR/TIMEOUT/BAD_DATA → 本轮整体失败不写
+ *     （不再把已装槽 CRC 当空槽忽略，解决降速风险）。
+ *   - 从未 OK 的槽本轮 BUS_ERR → 视为候选空槽忽略（不污染样本）。
+ *   - 局限：首轮若某已装 DIMM 恰好 BUS_ERR 且其它槽 OK，会暂时漏其温度（用余下槽
+ *     喂值），次轮恢复 OK 即受保护；本机实测已装恒 OK、空槽恒 BUS_ERR，窗口仅首轮。
+ * 无任何 OK 槽（InstalledMask 空）→ READ_FAILED 不写；写回读回不一致 → WRITE_FAILED。
+ * 不写猜测值、不写 0°C。调用方（EvtIoDeviceControl）在驱动锁/串行队列内，
+ * 映射由串行队列保证单线程读写。
  */
 static NTSTATUS
-RamFanFeedOnce(RAMFAN_FEED_ONCE_OUT *out)
+RamFanFeedOnce(RAMFAN_DRIVER_CONTEXT *ctx, RAMFAN_FEED_ONCE_OUT *out)
 {
     RAMFAN_QUERY_HW_OUT hw;
     RAMFAN_READ_DIMM_OUT rd;
@@ -213,8 +223,8 @@ RamFanFeedOnce(RAMFAN_FEED_ONCE_OUT *out)
         return STATUS_SUCCESS;
     }
 
-    /* 读取（RamFanReadDimmTemp 内部重复门禁 + 零事务保证；此处已过门禁才进入） */
-    status = RamFanReadDimmTemp(&rd);
+    /* 读取（已过门禁，gateDone=TRUE 复用前置结果避免双重探针） */
+    status = RamFanReadDimmTemp(TRUE, &rd);
     if (!NT_SUCCESS(status)) {
         out->Status = RAMFAN_FEED_READ_FAILED;
         return STATUS_SUCCESS;
@@ -223,18 +233,25 @@ RamFanFeedOnce(RAMFAN_FEED_ONCE_OUT *out)
         out->Slots[i] = rd.Slots[i];
     }
 
-    /* 校验：任何 TIMEOUT（已装无响应/控制器忙）或 BAD_DATA → 本轮整体失败，不写 */
+    /* 已装映射收紧：遍历全部槽 */
     for (i = 0; i < rd.Count; i++) {
         UCHAR st = rd.Slots[i].Status;
-        if (st == RAMFAN_DIMM_TIMEOUT || st == RAMFAN_DIMM_BAD_DATA) {
+        UCHAR bit = (UCHAR)(1u << i);
+
+        if (st == RAMFAN_DIMM_OK) {
+            ctx->InstalledMask |= bit;   /* 曾成功 = 已装 */
+            if (rd.Slots[i].Celsius > maxC) {
+                maxC = rd.Slots[i].Celsius;
+            }
+        } else if (ctx->InstalledMask & bit) {
+            /* 已装确认的槽本轮异常（CRC/超时/越界）→ 整体失败，不写，不降速 */
             out->Status = RAMFAN_FEED_READ_FAILED;
             return STATUS_SUCCESS;
         }
-        if (st == RAMFAN_DIMM_OK && rd.Slots[i].Celsius > maxC) {
-            maxC = rd.Slots[i].Celsius;
-        }
+        /* 从未 OK 的 BUS_ERR/TIMEOUT/BAD_DATA 槽：空槽候选，本轮忽略 */
     }
-    if (maxC == 0 && !rd.AnySuccess) {
+
+    if (!rd.AnySuccess) {
         out->Status = RAMFAN_FEED_READ_FAILED;
         return STATUS_SUCCESS;
     }
@@ -402,10 +419,12 @@ RamFanEvtIoDeviceControl(WDFQUEUE Queue,
     PVOID outBuffer = NULL;
     size_t outLen = 0;
     WDFDEVICE device;
+    RAMFAN_DRIVER_CONTEXT *ctx;
 
     UNREFERENCED_PARAMETER(InputBufferLength);
 
     device = WdfIoQueueGetDevice(Queue);
+    ctx = RamFanGetDriverContext(WdfDeviceGetDriver(device));
 
     if (!RamFanBeginIo(device)) {
         /* 驱动正在卸载 */
@@ -443,7 +462,7 @@ RamFanEvtIoDeviceControl(WDFQUEUE Queue,
             status = STATUS_BUFFER_TOO_SMALL;
             break;
         }
-        status = RamFanReadDimmTemp(&out);
+        status = RamFanReadDimmTemp(FALSE, &out);
         if (!NT_SUCCESS(status)) {
             /* 身份不匹配或不支持：不返回槽数据，也不做部分降速 */
             break;
@@ -467,7 +486,7 @@ RamFanEvtIoDeviceControl(WDFQUEUE Queue,
             status = STATUS_BUFFER_TOO_SMALL;
             break;
         }
-        status = RamFanFeedOnce(&out);
+        status = RamFanFeedOnce(ctx, &out);
         if (!NT_SUCCESS(status)) {
             break;
         }

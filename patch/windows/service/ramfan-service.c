@@ -1,10 +1,11 @@
-/* ramfan-service.c — B850AIGA RAM-FAN Virtual_TEMP 补丁服务（受控试验，SMBus 读取阶段）
+/* ramfan-service.c — B850AIGA RAM-FAN Virtual_TEMP 补丁服务（受控试验，常驻喂值阶段）
  *
  *   - --identity：只读身份门禁检查（QUERY_HW，不访问 SMBus、不写 NCT）
  *   - --dimm：受控 SMBus 读取实验（READ_DIMM_TEMP，读全部候选槽并打印状态；不写 NCT）
- *   - --once：单次写回（FEED_ONCE：读→校验→最高温→NCT Virtual_TEMP 写回，§5.2 第 3 步）
- *   - --install / --uninstall：SCM 安装仍拒绝（验收后才启用）
- *   - 默认 SCM 模式启动时执行一次身份门禁检查；常驻 0.5s 喂值留到后续阶段
+ *   - --once：单次写回（FEED_ONCE：读→校验→最高温→NCT Virtual_TEMP 写回）
+ *   - --install / --uninstall：SCM 安装（开发测试 DEMAND_START；验收后才自动启动）
+ *   - 默认 SCM 模式：启动时身份门禁检查，随后 0.5s 周期 FEED_ONCE 循环；
+ *     连续失败有限退避；停止信号退出循环（不清除 NCT 值）
  *
  * 构建：MSVC，链接 advapi32（SCM）与 kernel32。
  * 包含共享定义：../driver/ramfan_ioctl.h
@@ -25,9 +26,7 @@
 static SERVICE_STATUS         g_Status;
 static SERVICE_STATUS_HANDLE  g_StatusHandle = NULL;
 static HANDLE                 g_StopEvent = NULL;
-static volatile LONG          g_InstallDisabled = 1;
-/* g_FeedDisabled 已删除：§5.2 第 3 步批准后 --once 写回启用；常驻 0.5s 喂值阶段
-   （需再批准）再引入独立的 SCM 生命周期开关 */
+/* SCM 服务安装/卸载已批准（常驻阶段 2026-09-05）；用 DEMAND_START 安装，验收后才改自动启动 */
 /* ---- 日志（服务模式写文件；--once 同时输出 stdout） ---- */
 static void
 LogMessage(const char *fmt, ...)
@@ -250,8 +249,7 @@ ServiceMain(DWORD argc, LPWSTR *argv)
         return;
     }
 
-    /* 启动时执行只读身份门禁检查；失败有限重试。当前 SCM 服务不做常驻喂值循环，
-       常驻 0.5s 喂值留后续阶段（需再批准）；单次写回用 --once 控制台模式验证。 */
+    /* 启动：身份门禁检查，失败有限重试；通过后进入常驻 0.5s FEED_ONCE 循环 */
     LogMessage("SERVICE START (identity gate check)");
     for (attempt = 0; attempt < 3; attempt++) {
         readStatus = RunIdentityGateCheck();
@@ -270,12 +268,129 @@ ServiceMain(DWORD argc, LPWSTR *argv)
         SetServiceStatus(g_StatusHandle, &g_Status);
         return;
     }
+
+    /* 常驻喂值循环：0.5s 周期调用 FEED_ONCE；连续失败有限退避；
+     * 服务停止不清除 NCT 值；读取失败不写 0°C/猜测值（驱动已保证）。 */
     g_Status.dwCurrentState = SERVICE_RUNNING;
     g_Status.dwCheckPoint = 0;
     SetServiceStatus(g_StatusHandle, &g_Status);
+    LogMessage("SERVICE RUNNING (feed loop 0.5s)");
 
-    /* 等待停止（后续阶段改为 0.5s 喂值循环） */
-    WaitForSingleObject(g_StopEvent, INFINITE);
+    {
+        HANDLE dev = OpenDevice();
+        ULONG consecFails = 0;
+        UCHAR lastMax = 0xff;   /* 记录变化用于日志节流 */
+        UCHAR lastStatus = 0xff;
+        DWORD lastWarnTick = 0;
+        int fatalLogged = 0;    /* 恢复失败 FATAL 只提示一次 */
+
+        if (dev == INVALID_HANDLE_VALUE) {
+            LogMessage("WARN: 驱动设备不可用 GLE=%lu，将重试", GetLastError());
+        }
+
+        while (g_StopEvent != NULL &&
+               WaitForSingleObject(g_StopEvent, 0) != WAIT_OBJECT_0) {
+            DWORD bytesReturned = 0;
+            RAMFAN_FEED_ONCE_OUT feed = {0};
+            BOOL ok;
+
+            if (dev == INVALID_HANDLE_VALUE) {
+                /* 设备不可用：有限退避重试（最多 5s），不刷日志 */
+                dev = OpenDevice();
+                if (dev == INVALID_HANDLE_VALUE) {
+                    if (WaitForSingleObject(g_StopEvent, 2000) == WAIT_OBJECT_0) {
+                        break;
+                    }
+                    continue;
+                }
+                LogMessage("INFO: 驱动设备已可打开");
+            }
+
+            ok = DeviceIoControl(dev, IOCTL_RAMFAN_FEED_ONCE, NULL, 0,
+                                  &feed, sizeof(feed), &bytesReturned, NULL);
+            if (!ok || bytesReturned != sizeof(feed)) {
+                /* 设备访问错误（驱动卸载等）：关闭并退避重开 */
+                CloseHandle(dev);
+                dev = INVALID_HANDLE_VALUE;
+                consecFails++;
+                if (consecFails == 1 || consecFails % 10 == 0) {
+                    LogMessage("WARN: FEED_ONCE IO 失败 GLE=%lu (连续 %lu)",
+                               GetLastError(), consecFails);
+                }
+                if (WaitForSingleObject(g_StopEvent, 1000) == WAIT_OBJECT_0) {
+                    break;
+                }
+                continue;
+            }
+
+            if (feed.Status == RAMFAN_FEED_OK) {
+                consecFails = 0;
+                /* 日志节流：只在温度或状态变化时记录（0.5s 一轮不刷盘） */
+                if (feed.MaxCelsius != lastMax || feed.Status != lastStatus) {
+                    LogMessage("FEED ok: max=%u°C written=%u readback=%u",
+                               feed.MaxCelsius, feed.WrittenCelsius,
+                               feed.ReadBackCelsius);
+                    lastMax = feed.MaxCelsius;
+                    lastStatus = feed.Status;
+                }
+            } else {
+                /* 失败：识别“SMBus 控制器恢复失败”（sticky，全部槽 TIMEOUT 且
+                 * HstSts==0，见 hw.c g_SmbusRecoveryFailed）→ 独立醒目提示，喂值将
+                 * 停摆到驱动重载/重启，不伪装成可自动恢复的普通失败。 */
+                {
+                    int allTimeoutZero = 1;
+                    int j;
+                    for (j = 0; j < RAMFAN_SPD_ADDR_COUNT; j++) {
+                        if (feed.Slots[j].Status != RAMFAN_DIMM_TIMEOUT ||
+                            feed.Slots[j].HstSts != 0) {
+                            allTimeoutZero = 0;
+                            break;
+                        }
+                    }
+                    if (allTimeoutZero && consecFails >= 1 && !fatalLogged) {
+                        LogMessage("FATAL: SMBus 控制器恢复失败（sticky），喂值已停摆；",
+                                   "需重载驱动或重启");
+                        fatalLogged = 1;
+                    }
+                }
+                consecFails++;
+                lastStatus = 0xff;   /* 失效：恢复后下一次 OK 必记录 */
+                lastMax = 0xff;
+                /* 日志节流：连续失败每 10 次或距上次警告 >=5s 才记，防 OK/失败抖动刷屏 */
+                {
+                    DWORD now = GetTickCount();
+                    if (consecFails == 1 || consecFails % 10 == 0 ||
+                        now - lastWarnTick >= 5000) {
+                        LogMessage("WARN: FEED_ONCE status=%u max=%u (连续 %lu)",
+                                   feed.Status, feed.MaxCelsius, consecFails);
+                        lastWarnTick = now;
+                    }
+                }
+                /* 有限退避：连续失败时拉长间隔，最多 5s */
+                {
+                    ULONG delayMs = 500;
+                    if (consecFails >= 20) {
+                        delayMs = 5000;
+                    } else if (consecFails >= 10) {
+                        delayMs = 2000;
+                    }
+                    if (WaitForSingleObject(g_StopEvent, delayMs) == WAIT_OBJECT_0) {
+                        break;
+                    }
+                    continue;
+                }
+            }
+
+            if (WaitForSingleObject(g_StopEvent, 500) == WAIT_OBJECT_0) {
+                break;
+            }
+        }
+
+        if (dev != INVALID_HANDLE_VALUE) {
+            CloseHandle(dev);
+        }
+    }
+
 
     LogMessage("SERVICE STOP");
     g_Status.dwCurrentState = SERVICE_STOPPED;
@@ -286,9 +401,6 @@ ServiceMain(DWORD argc, LPWSTR *argv)
 static int
 InstallService(void)
 {
-    if (g_InstallDisabled) {
-        printf("SCM 用户态服务安装当前禁用（SCM 生命周期未批准；本阶段用驱动直接加载 + --identity/--dimm/--once 验证）。\n");
-    }
     SC_HANDLE scm, svc;
     WCHAR path[MAX_PATH];
     SERVICE_DESCRIPTION desc;
@@ -315,8 +427,7 @@ InstallService(void)
         svc = OpenServiceW(scm, RAMFAN_SERVICE_NAME, SERVICE_ALL_ACCESS);
     }
     if (svc != NULL) {
-        desc.lpDescription = (LPWSTR)L"RAMFan VirtualTEMP Feeder（受控试验；§5.2 第 3 步单次写回已批准）";
-        CloseServiceHandle(svc);
+        desc.lpDescription = (LPWSTR)L"RAMFan VirtualTEMP Feeder（受控试验；常驻 0.5s 喂值，DEMAND_START）";
     }
     CloseServiceHandle(scm);
     printf("服务已安装（DEMAND_START）。启动：sc start RAMFan\n");
@@ -326,10 +437,6 @@ InstallService(void)
 static int
 UninstallService(void)
 {
-    if (g_InstallDisabled) {
-        printf("SCM 用户态服务卸载当前禁用。\n");
-        return 1;
-    }
     SC_HANDLE scm, svc;
 
     scm = OpenSCManagerW(NULL, NULL, SC_MANAGER_ALL_ACCESS);
@@ -355,7 +462,6 @@ UninstallService(void)
     return 0;
 }
 
-/* 当前 PnP 骨架不允许用户态 SCM 安装/卸载入口修改系统。 */
 /* ---- main ---- */
 int
 main(int argc, char **argv)

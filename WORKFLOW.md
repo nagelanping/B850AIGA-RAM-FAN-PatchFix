@@ -1,150 +1,136 @@
-# Windows Patch 工作流
+# Windows / Linux 内存风扇修复工作流
 
-## 1. 目标
+## 1. 唯一目标
 
-为 MAXSUN MS-iCraft B850 AIGA 修复 Windows 下重启后内存风扇曲线失效：不修改 BIOS、不刷写固件、不改曲线配置，只持续把 DIMM 温度写入 NCT6796D 的 `Virtual_TEMP`，让 BIOS 已配置的 `FAN5=MEM_FAN` 曲线继续工作。
+修复 MAXSUN MS-iCraft B850 AIGA 在 Windows 重启后 `FAN5=MEM_FAN` 曲线失效的问题：持续读取 DIMM 温度并写入 NCT6796D `Virtual_TEMP`，不修改 BIOS、曲线、温度源或固件。
 
-固定数据链路：
-
-```text
-Windows 内核驱动
-  ├─ 南桥 SMBus 0xb00 → SPD5118 DIMM 温度
-  └─ NCT SIO 0x295/0x296 → 页 0x0c、reg 0x36（°C × 1）
-                                  ↓
-                         BIOS Smart Fan → FAN5
-```
-
-服务每 0.5 秒请求驱动执行一次完整喂值。读取失败或写入失败时跳过本轮，不写 0、不写猜测值，保持上一次成功值并记录告警。
-
-## 2. 已确认事实（不要重新逆向）
-
-| 项目         | 值                                                                                               |
-| ------------ | ------------------------------------------------------------------------------------------------ |
-| 主板 / BIOS  | MAXSUN MS-iCraft B850 AIGA；E1.6D 已验证                                                         |
-| NCT 芯片     | 实测 chip id`0xd802`，NCT6796D-S / NCT6799D 兼容系列                                           |
-| 内存风扇     | `FAN5=MEM_FAN`，bank/page code `0x09`                                                        |
-| 温度源       | bank`0x09` 的 reg `0x00` = `0x0a`（`Virtual_TEMP`）                                      |
-| 写入目标     | NCT page`0x0c`、reg `0x36`                                                                   |
-| 温度编码     | 摄氏度整数，`0x1e` = 30°C                                                                     |
-| SMBus 基址   | `0xb00`（实机 FCH SMBus）                                                                      |
-| SPD 设备     | 7-bit 地址优先轮询`0x53, 0x52, 0x51, 0x50`；命令 `0x31`；word read                           |
-| 温度换算     | `scaled=(raw << 3) >> 5`；`celsius=(scaled * 25) / 100`                                      |
-| SMBus 成功位 | `HST_STS bit1 (0x02)` 可出现在成功事务；`0x04` 是无设备/CRC 样式错误，不能把 `0x02` 当失败 |
-| 页选择       | `outb(0x4e, 0x295)`；读 `0x296`；写 `(old & 0xf0) \| page`                                  |
-| 周期         | 0.5 秒                                                                                           |
-
-实测响应：写 30°C → `pwm5=76`、约 1031 rpm；写 40°C → `pwm5=101`、约 1326 rpm。Linux 已完成 sysfs 读取 + NCT 写回闭环；Linux 版本和详细证据在 `archive/0.1/linux/`，历史逆向材料在 `ref/`。
-
-## 3. Windows 方案边界
-
-### 3.1 首选架构
-
-采用 **KMDF 内核驱动 + Windows Service**，不依赖 WinRing0、InpOut32 等第三方环路驱动。原因是 Windows 用户态不能直接可靠执行 I/O port，第三方驱动的签名、兼容性和安全边界不应成为正式交付物。
-
-- 驱动负责：端口 I/O、SMBus 完整事务、状态位判断、温度换算、NCT 页选择和目标寄存器写回。
-- 服务负责：启动/停止、0.5 秒周期、日志、`--once` 验证入口和错误重试。
-- 驱动提供一个最小的 `IOCTL_RAM_FAN_FEED_ONCE`，一次调用完成“读取所有候选 DIMM → 校验 → 取最高温 → 写入并读回校验”。不要把多个裸端口操作暴露给服务。
-- 驱动内部用单次调用锁住完整硬件序列，防止本驱动的并发请求交错；不能假设它能与其他硬件监控程序或固件访问自动原子化。
-- 驱动只先实现并验证只读路径；在确认端口资源和 SMBus 所有权前，不进入写回和常驻服务。
-
-WDM 仅在目标机无法使用 KMDF 时评估。禁止先实现 GUI、配置协议、可调周期、固件补丁或多种后端。
-
-### 3.2 端口与 SMBus 实现要求
-
-1. 不要在代码中无条件假设 SMBus 基址永远是 `0xb00`。当前实机 `PCI\VEN_1022&DEV_790B` 没有列出 I/O resource，而 `ACPI\PNP0C02\700` 列出 `0x0b00-0x0b0f`。因此优先评估绑定 `ACPI\PNP0C02` 资源设备的 PnP upper-filter，在 `EvtDevicePrepareHardware` 收到 translated resource 后使用；`0xb00` 只作为当前已知诊断结果。
-2. SMBus、NCT 自定义 SIO 和标准 SIO 是独立资源范围。当前证据显示 `PNP0C02\700` 包含 `0x0b00-0x0b0f` 与 `0x22-0x3f`（后者覆盖标准 SIO `0x2e/0x2f`），`PNP0C02\0` 包含 `0x0290-0x029f` 及 `0x0200-0x023f`；不能由一个实例的资源推断另一个实例的端口权限；upper-filter 必须按 `ResourcesTranslated` 中实际范围选择资源。
-2a. 当前非 PnP 控制设备没有 `EvtDevicePrepareHardware` 或 translated resource list。资源模型解决前，`FEED_ONCE` 必须在任何硬件访问前返回 `RAMFAN_FEED_HW_UNAVAILABLE`；不得安装测试或执行真实写回。
-2b. 标准 SIO `0x2e/0x2f` 在 `PNP0C02\700` 的 `0x22-0x3f` 声明范围内；SIO 授权随覆盖它的角色实例（实机为 `\700` 的 SMBUS 角色）登记与清空。身份访问（chip id 校验）只能使用登记后的 SIO 基址在首个 FEED_ONCE 事务内执行一次；`0x0200-0x023f` 不含 `0x2e/0x2f`，NCT 角色不因本实例缺 SIO 而被拒。
-3. 每个 SPD 地址执行完整 HST word-read：清状态、写从地址读格式、写命令 `0x31`、启动 `0x4c`、轮询 BUSY、检查错误位、读取两个数据字节。
-4. BUSY 超时、`0x04` 或其他明确错误、非法 raw、换算结果不在 `0..120°C` 均视为该地址失败。
-5. 首轮先用 HWiNFO/只读 SMBus 结果建立“已安装 DIMM”与 SPD 地址的映射。空槽 NACK 不算故障；已安装地址的超时、总线错误或异常状态算该轮失败。只有所有已安装 DIMM 都成功才写 NCT；首版取最高值，不用剩余低温值降速。
-6. NCT 写入严格只允许 page `0x0c` / reg `0x36`，写后读回必须一致；进入写入前保存当前页，成功或失败时尽力恢复。不得写 page `0x09` 的曲线或源选择寄存器。
-7. 所有端口访问失败返回明确 NTSTATUS。SMBus 超时必须先执行有限的状态清理/中止并确认 BUSY 已清除；若控制器仍不可恢复，停止本驱动的写回并报告错误，不对共享控制器做未经验证的强制复位。
-8. 驱动内部锁只覆盖本驱动；阶段 2 前必须停止会访问这些端口的 HWiNFO/同类工具并记录冲突观察。若外部并发导致事务不稳定，不得靠服务层加锁掩盖问题。
-
-### 3.3 服务行为
-
-- Windows Service 使用 SCM 注册，默认 `SERVICE_DEMAND_START` 开发测试，验收后再设为自动启动（Delayed Auto-Start 不是必需项）。服务打开设备失败时有限退避重试，不能依赖固定启动顺序。
-- 默认启动即喂值；`--once` 完成一次 IOCTL 并返回：成功 `0`，硬件/读写失败 `1`，参数错误 `2`。
-- 使用 Windows Event Log 或统一文本日志；至少记录驱动连接失败、有效温度样本、写入值、读回值、连续失败次数和恢复事件。成功日志不按 0.5 秒刷屏。
-- 服务停止不清除 NCT 最后一次写入值；卸载不会修改 BIOS。卸载前明确告知该行为。
-- 设备句柄、服务线程和驱动资源必须在停止路径正确关闭；不做退出时写“安全温度”的未经验证行为。
-
-## 4. 实施阶段
-
-### 阶段 0：切换到 Windows 后确认环境
-
-机主在 Windows 记录：Windows 版本、Secure Boot 状态、内存条数量、设备管理器中的 SMBus 控制器、驱动签名策略和可用磁盘空间。安装 Visual Studio + Windows SDK + WDK，使用 x64 Debug 构建；不关闭 Secure Boot 作为默认前提。
-
-先用只读工具确认：
-
-- PCI FCH SMBus 资源是否为 `0xb00`；
-- NCT 芯片 id 是否为 `0xd802`；
-- BIOS 中 `FAN5` 温度源仍为“内存温度”且为 `0x0a`；
-- HWiNFO 等现有工具能看到 DIMM 温度（仅作对照，不让多个工具写 NCT）。
-
-### 阶段 1：驱动骨架和只读验证
-
-创建 `patch/windows/` 的 KMDF x64 工程、INF、签名/测试安装脚本和最小服务工程。先实现设备创建、IOCTL 通路、硬件识别和只读 SMBus 温度请求；此阶段禁止写 NCT。
-
-质量门：驱动能加载/卸载，服务能打开设备；错误状态可观察；不匹配硬件时拒绝工作；不会触碰风扇寄存器。
-
-### 阶段 2：一次性写回闭环（资源模型通过后）
-
-当前阶段 2只保留 `IOCTL_RAM_FAN_FEED_ONCE` 接口，资源模型未通过前立即返回 `RAMFAN_FEED_HW_UNAVAILABLE`，禁止安装、真实端口访问和写回。
-
-当前实机资源输出显示 PCI SMBus function 没有 I/O resource，而 `PNP0C02\700` 提供 SMBus 范围、`PNP0C02\0` 提供 NCT 及标准 SIO 所在范围。先评估绑定 `PNP0C02` 资源设备的 upper-filter，而不是假定 PCI upper-filter 能获得 `0xb00`。两个资源实例均须在 `EvtDevicePrepareHardware` 获得合法 translated resources 后，才恢复完整事务和 `--once` 写回。
-
-资源模型确认后，保存 Secure Boot / BCD 原状；开发机先验证错误路径，再由机主在目标板执行：
-
-1. 记录 `fan5/pwm5` 基线以及 NCT 原值；
-2. 停止 Linux 或其他硬件监控写入方，避免同时访问 `0x295/0x296`；
-3. 运行 `--once`，记录每个地址结果、最高温度、写入和读回值；
-4. 对照 30°C / 40°C 历史响应，确认 `pwm5` 和 `fan5` 单调变化；
-5. 结束后重启，确认 BIOS 曲线和温度源未被改写。
-
-### 阶段 3：Windows 常驻服务
-
-一次性闭环通过后启用 0.5 秒循环和 SCM 自动启动。验证服务重启、睡眠恢复和系统重启后，在不打开 BIOS 曲线页的情况下自动恢复喂值。连续采样 `pwm5/fan5`，同时观察服务日志；不要以单次风扇读数作为唯一结论。连续失败导致旧值过期时，首版暂不擅自写安全温度，必须把旧值保持作为明确的热安全风险记录。
-
-动态验收至少包含：空槽、单 DIMM 读取失败、全部读取失败、SMBus 超时、NCT 读回不一致、服务停止/启动和短时内存加压。失败时应保持上次值，不应写 0°C。
-
-### 阶段 4：审查、打包和记录
-
-执行驱动静态检查、x64 Release 构建、服务自检和安装/卸载测试。提交前必须交子代理独立审查：端口、SMBus 状态位、温度换算、IOCTL 边界、NCT 写入范围、并发和失败策略，以及与 `LOG.md` 的一致性。机主完成目标机测试后，将版本、签名方式、命令、结果和未决风险写入 `LOG.md`，然后再制作发布包。启用 Secure Boot 的正式交付必须有 Microsoft Attestation/WHQL 等可信签名；否则只能交付明确标注的测试版。
-
-## 5. 目录与交付物
-首版保持最小结构：
+已确认链路：
 
 ```text
-patch/windows/
-├── driver/                 # KMDF PnP upper-filter、vcxproj、INF
-├── service/                # Windows Service、--once、日志
-├── build.ps1               # 可重复构建，不隐含关闭安全启动
-├── install-test.ps1        # 当前暂停，防止误安装骨架
-├── uninstall.ps1           # 待 INF 回滚流程完成后启用
-└── WINDOWS.md              # 目标机安装、验证、回滚
+DIMM SPD → AMD FCH SMBus → DIMM 温度 → NCT Virtual_TEMP → BIOS Smart Fan → FAN5
 ```
 
-正式交付至少包含：签名驱动包、服务可执行文件、安装/卸载脚本、SHA-256、支持范围、已知限制和回滚步骤。没有合适签名时只能称为开发测试版，不宣称正式发布。
+Linux 版本已经完成实机闭环，是当前可交付的修复。Windows 工作只在能增加真实可用性时继续；不再为已证伪的 PnP 资源绑定模型继续堆代码。
 
-## 6. 验收标准
+## 2. 不变的硬件事实
 
-- 目标机重启后服务自动启动，不打开 BIOS 页面也能喂值；
-- DIMM 温度读数与 HWiNFO/BIOS 对照在合理误差内；
-- `Virtual_TEMP` 写入和读回一致，`pwm5/fan5` 按原 BIOS 曲线响应；
-- 仅写 page `0x0c` / reg `0x36`，不改变曲线、模式或温度源；
-- 读取失败不会写伪造温度，服务可重试且日志不过量；
-- 驱动、服务可停止、卸载、回滚；不要求刷 BIOS；
-- Secure Boot 和驱动签名限制被明确记录；测试签名版不列为普通用户正式安装方案。
+- NCT 芯片：chip id `0xd802`，NCT6796D-S / NCT6799D 兼容系列。
+- NCT SIO：index `0x295`、data `0x296`；标准 SIO `0x2e/0x2f`。
+- `FAN5=MEM_FAN`：page `0x09`、reg `0x00` = source `0x0a`（`Virtual_TEMP`）。
+- 写回目标：page `0x0c`、reg `0x36`；编码为整数摄氏度。
+- FCH SMBus：实机诊断基址 `0xb00`，控制器 `PCI\VEN_1022&DEV_790B`。
+- SPD 地址按 `0x53, 0x52, 0x51, 0x50` 轮询，命令 `0x31`，word read。
+- 温度换算：`scaled=(raw << 3) >> 5`，`celsius=(scaled * 25) / 100`，有效范围 `0..120°C`。
+- SMBus `HST_STS=0x02` 可表示成功；`0x04` 不能简单等同于失败类型，空槽与已安装 DIMM 的错误处理必须区分。
+- NCT 页选择必须保留高 4 位：读取旧值后写 `(old & 0xf0) | page`。
+- 实测：写 30°C → `pwm5=76`、约 1031 rpm；写 40°C → `pwm5=101`、约 1326 rpm。
 
-## 7. 失败转向条件
+## 3. 当前进展和结论（2026-09-05）
 
-- 若 Windows 无法在不引入不受信任第三方驱动的情况下获得安全的端口访问，暂停实现并记录原因；不要绕过签名策略交付。
-- 若 SMBus 被 Windows 驱动独占或 raw HST 访问不稳定，优先研究 Windows 可用的标准 SPD/SMBus 内核接口；不在服务层增加轮询竞争、全局用户态锁或 GUI。
-- 若无法获得合法的 NCT 端口资源/访问模型，或控制器超时后无法安全恢复，停在只读阶段，不实现写回。
-- 只有 OS 驱动方案确认不可行，才重新评估 SMM 固件方案；刷 BIOS 必须另行批准、备份和签名校验。
+### 3.1 已完成
 
-#### 2026-09-05 实机结论（§7 触发记录）
+- Linux 服务完成读取 `spd5118` hwmon、最高有效 DIMM 温度选择、NCT 写回/读回校验、systemd 常驻和基本实机验证；发布物在 `release/linux/`。
+- Windows 阶段 1 骨架、控制设备、只读 IOCTL、SMBus/NCT 纯逻辑检查和服务 `--once` 接口已完成。
+- Windows 目标机已确认：Windows 11 10.0.26200 x64；Secure Boot False；2×16GB；AMD SMBus `DEV_790B`；`PNP0C02\700` 声明 `0xb00-0xb0f`，`PNP0C02\0` 声明 `0x290-0x29f`。
+- `PNP0C02\700`、`\0` 均由 `machine.inf` 提供且 Enum 键无 `Service`，没有功能驱动 FDO。
 
-实机实验证明本平台 PNP0C02 资源绑定路径不可行：`\700`/`\0` 由 machine.inf 提供且无 Service（无功能驱动 FDO）；upper filter 附加在运行期与开机栈构建均不生效；function-driver 替换被 pnputil（“function driver was not specified”）、SetupDi（GLE 1784）与 `UpdateDriverForPlugAndPlayDevicesW`（0xE0000219）三路拒绝。按本节点策略暂停 Windows 端口访问实现并记录；不得以自声明端口或绕过签名方式交付。
+### 3.2 已证伪、不得重做
+
+实验 B/C 已证明：
+
+- 通用 `PNP0C02` upper-filter 在运行期和开机栈构建均不挂载；驱动不会收到 `EvtDevicePrepareHardware`。
+- `pnputil`、SetupAPI `DIF_INSTALLDEVICE`、`UpdateDriverForPlugAndPlayDevicesW` 均拒绝以第三方 function driver 替换目标节点。
+- 因此“绑定 `PNP0C02` 并取得 translated resources”在本平台不能作为 Windows 实现前提。
+- 非 PnP 驱动当前没有 translated resource list；`FEED_ONCE` 必须继续在任何端口访问前返回 `RAMFAN_FEED_HW_UNAVAILABLE`。
+- 不再继续修改 INF、upper-filter、PNP0C02 function-driver 替换或用 PCI 资源授权 NCT 端口。
+`LOG.md` 中早于 2026-09-05 的 PNP0C02 绑定方案仅是历史计划，不得恢复为当前实施计划或授权依据。
+
+机器当前仍有测试遗留：testsigning 为 on，测试证书 `RAMFanTestSign` 在 Machine 存储中。若不立即进入 Windows 试验，先执行回滚脚本并重启。
+
+## 4. 修复优先级与路线选择
+
+按“能修复问题”排序：
+
+1. **Linux 立即交付**：这是已验证的修复，不等待 Windows。
+2. **Windows 受控可行性试验**：在明确批准后评估非 PnP KMDF + 固定端口访问模型。该模型不是当前授权政策下的正式实现，必须先完成身份、平台和签名边界设计，再允许一次性写回试验。
+3. **Windows 正式交付**：只有存在可信签名、可接受的端口授权依据、可回滚安装方式和目标机闭环证据时才制作。
+4. **SMM/BIOS 方案**：仅在 Windows 受控试验失败且机主另行批准后评估；本工作流不刷写 BIOS。
+
+“Windows 必须绑定 PnP translated resources”不再是修复目标本身，而是已失败的授权方案。若机主不批准放宽模型，则 Windows 停止在阶段 1，项目以 Linux 版本交付。
+
+## 5. Windows 受控可行性试验（必须先批准）
+
+### 5.1 放宽模型的最小边界
+
+候选实现为**非 PnP KMDF 控制设备 + 驱动内固定目标端口**，但必须同时满足：
+
+- 只支持已确认的主板/芯片身份：通过只读 PCI `DEV_790B`、ACPI 设备/资源声明和 NCT chip id `0xd802` 进行拒绝式校验；任何一项不匹配即不工作。
+- 端口白名单只允许 `0xb00` SMBus、`0x295/0x296` NCT SIO，以及仅用于 NCT 身份探针的标准 SIO `0x2e/0x2f`；不提供任意端口或任意寄存器 IOCTL。`0x2e/0x2f` 的解锁、chip-id 读取和锁定只允许在驱动内部执行，不能用于其他寄存器操作。
+- 只允许写 NCT page `0x0c` / reg `0x36`；SMBus 事务、超时清理、页恢复和写后读回必须在驱动内完成并加锁。
+- 明确记录：ACPI 资源声明是诊断/平台绑定证据，不等于独占；NCT/SMBus 可能被固件、ACPI/WMI 或监控软件并发访问。
+- 仅允许测试机、管理员/SYSTEM、明确签名的驱动和可逆安装；不得关闭签名策略作为发布方案，不得引入 WinRing0/InpOut32。
+
+在实现前，必须由机主确认这是一项**有风险的受控访问模型**，并同步修订 `AGENTS.md` 的资源授权条款；未经确认，驱动继续阻断写回。
+
+### 5.1a 授权表与不可推导事项
+
+必须分开记录以下四件事：
+
+- **身份依据**：主板、PCI `DEV_790B`、ACPI 设备/资源声明、NCT chip id；用于拒绝不匹配硬件。
+- **访问依据**：当前没有已确认的 Windows 资源持有或独占授权。身份匹配和 ACPI 声明不能推出访问授权；只有机主批准的目标机受控实验例外，才可承担共享端口风险，且该例外不构成正式交付依据。若项目不接受此例外，Windows 路线立即停止。
+- **实验批准**：机主是否明确批准在这台目标机承担共享端口风险；这只允许受控实验，不自动变成发布授权。
+- **发布批准**：是否具备面向其他机器交付的签名、支持范围和端口访问依据。当前候选模型默认不具备。
+
+本候选模型没有可宣称的 Windows 独占资源授权。ACPI/PNP0C02 声明、PCI BAR 和历史 Linux 基址只能作为拒绝式平台校验或诊断证据；它们不能单独授权非 PnP 驱动访问，也不能证明端口独占。进入真实端口读写前，必须在决策记录中明确“受控实验例外”而非伪称为 OS 资源授权；正式发布仍必须有独立、可验证的访问依据。若不能接受该风险，回到 Linux 交付。
+
+### 5.2 试验顺序
+
+进入第 1 步前必须同时满足：机主对本机受控试验明确批准；`AGENTS.md` 已同步记录新授权边界；驱动可加载/卸载、控制设备 ACL 仅允许 SYSTEM/管理员、IOCTL 默认阻断、停止服务后无活动请求和残留设备对象；安装失败可恢复原状态。每次从只读阶段进入写回阶段前，须有独立子代理审查和实机证据记录。
+
+1. **先做只读身份门禁**：实现并测试平台匹配、NCT chip id、SMBus 控制器识别；NCT 身份探针可按 §5.1 的严格白名单短暂操作 `0x2e/0x2f`，但仍不访问 SMBus 事务寄存器、不写 NCT 目标寄存器。
+2. **读取 DIMM 数据的受控 SMBus 试验**：这里的“只读”仅指对 DIMM 数据读取；SMBus word-read 必然会向控制器状态、地址、命令和启动寄存器写入事务，因此必须单独取得受控实验批准。停止 HWiNFO、OpenHardwareMonitor、AIDA、Linux 环境及其他端口工具后，探测 `0x53..0x50`，记录空槽 NACK、已安装 DIMM、状态位、超时和重复读取稳定性。任何已安装 DIMM 的异常使整轮失败。
+3. **单次写回**：恢复 `FEED_ONCE`，一次完成全部 DIMM 读取、最高温度选择、NCT 写入和读回校验。先记录 NCT 原页/原值和 `pwm5/fan5` 基线；写入只允许 `0..120°C`。
+4. **动态闭环**：验证 30°C/40°C 已知响应、DIMM 温升下的单调变化、服务重启和睡眠恢复。不得以一次转速读数代替温度链路证据。
+5. **失败试验**：覆盖空槽、已装 DIMM 失败、全部失败、SMBus BUSY 超时、NCT 读回不一致、外部并发；失败时不写 0°C、不写猜测值，保留旧值并记录热安全风险。
+6. **回滚**：停止服务、卸载驱动、关闭 testsigning、删除测试证书并重启；确认 BIOS 曲线/温度源未改变。回滚验收还必须确认 `RAMFanPnP`/控制设备/服务/驱动文件/DriverStore 无残留，`UpperFilters`、`Service`、`ConfigFlags` 恢复原状，重启后原设备栈恢复，且没有仍驻留的旧驱动或活动请求。NCT 最后一笔有效 `Virtual_TEMP` 不主动清除，但须记录该行为；回滚失败时禁止继续端口访问。
+任一身份误判、端口访问不稳定、超时无法恢复、读回不一致、外部并发不可控或回滚失败，立即停止写回并回到 Linux 交付，不扩展功能。
+
+## 6. Windows 常驻服务与正式交付门槛
+
+
+当前 Windows 仍停留在“候选访问模型决策”阶段，尚未进入阶段 2 写回；以下常驻服务和正式交付条件是未来门槛，不是当前执行计划。
+只有单次写回闭环通过后，才实现/启用服务的 0.5 秒循环。开发阶段使用 demand start；服务重启、睡眠恢复和系统重启均验证通过后才考虑自动启动。
+
+正式交付还必须满足：
+
+- x64 Release 构建、静态检查、纯逻辑自检、安装/卸载/回滚验证通过。
+- 测试机可使用测试证书和 testsigning，但只能标记为开发测试版；正式 Windows 发布必须满足目标 Windows/Secure Boot 策略可接受的 Microsoft 可信签名要求，例如 Attestation 或 WHQL。
+- 必须验证 `.sys`、catalog、页哈希和安装包签名；当前目标机 Secure Boot 关闭只影响开发实验，不降低正式发布门槛。不得通过关闭 Secure Boot、开启 testsigning 或绕过 CI 作为交付方案。
+- 日志记录连接失败、有效温度、写入/读回、连续失败和恢复，但不每 0.5 秒刷屏。
+- 明确说明服务停止不清除最后写入值；连续失败造成旧值过期是热安全风险。
+- 由独立子代理审查寄存器、SMBus 状态、温度换算、IOCTL 边界、并发、失败策略、签名和回滚后，才允许提交/打包。
+
+## 7. Linux 交付路线
+
+Windows 决策期间不改造 Linux 链路。发布/维护只做必要修复：
+
+- 读取 `spd5118` hwmon，读取不完整时跳过写入并保留上次完整值。
+- 写 NCT page `0x0c` / reg `0x36`，写后读回校验。
+- 周期默认 0.5 秒，温度有效范围 `0..120°C`。
+- 修改后运行 `cargo fmt`、`cargo check`、`cargo test`、`cargo clippy`。
+
+## 8. 文档、审查与记录规则
+
+- 每个决策先写入根目录 `LOG.md`：选择、依据、风险、是否批准。
+- Windows `patch/` 的任何非文档代码修改，先查现有调用链；完成后必须独立子代理审查，再提交。
+- 所有实机试验记录 OS、BIOS、内存、基线、命令、结果、签名状态、回滚状态和未决风险。
+- 不刷 BIOS、不修改 BIOS 变量、不修改 `page 0x09` 曲线/模式/温度源。
+- 不同时运行多个会写 `0x295/0x296` 或访问 SMBus 的工具。
+
+## 9. 当前下一步
+
+1. 机主决定是否批准第 5 节的受控非 PnP 访问模型。
+2. 未批准：执行 `patch/windows/experiment-b-rollback.ps1 -RemoveCert`，重启关闭 testsigning，Windows 停止，维护 Linux 发布。
+未批准 Windows 时的 Linux 收尾还必须确认：Windows 测试服务、驱动、DriverStore、UpperFilters 和测试证书均已清理；testsigning 已关闭并在重启后生效；Linux release 包、systemd unit 和使用说明一致；不得把 Windows 测试版描述为正式修复方案。
+3. 已批准：先修订 `AGENTS.md`/本文件的授权边界，再只实现第 5.2 的身份门禁和只读 SMBus 阶段；不得直接恢复写回。
+4. 任何 Windows 试验结果写回 `LOG.md`，通过独立审查后再进入下一阶段。

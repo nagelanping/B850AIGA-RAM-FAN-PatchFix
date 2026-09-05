@@ -253,6 +253,23 @@ outb((v & 0xf0) | page, 0x296)
 - **§7 判定（Windows PnP 资源绑定路径在本平台不可行）**：PNP0C02 目标实例由 machine.inf 提供且无 Service（无功能驱动 FDO），系统既不让 upper filter 附加（运行期与开机栈构建均验证失败），也拒绝以第三方 function driver 替换（pnputil/SetupDi/UpdateDriver 三路拒绝）。据此：无法在“绑定 PnP 设备并持有 translated resources”的授权模型下获得 SMBus 0xb00 与 NCT 0x290 的访问；按 AGENTS 约束不得自声明端口或绕过签名策略。Windows 阶段 2 保持阻断暂停，FEED_ONCE 继续返回 RAMFAN_FEED_HW_UNAVAILABLE，不写 NCT。
 - 保留的有效改进（未提交）：控制设备 IOCTL 分发修复（`WdfDeviceConfigureRequestDispatching`，实测 QUERY_RESOURCE 返回正常）、`EvtDriverUnload` 删除控制设备、只读 `IOCTL_RAMFAN_QUERY_RESOURCE`、签名需 `/ph` 页哈希的发现、experiment-b-prep/rollback 脚本（通用签名/清理工具）。这些在继续 Windows 工作或改用其他访问模型时复用。
 - 系统状态：testsigning 仍为 on、测试证书 RAMFanTestSign 仍在（供可能的后续开发）；恢复出厂需 `experiment-b-rollback.ps1 -RemoveCert`（关闭 testsigning 后需重启生效）。实机验证命令与日志：`patch/windows/experiment-b-logs/`（gitignore）。
+## 2026-09-05 修复目标优先的工作流重规划
+
+- 已重写 `WORKFLOW.md`：将 Linux 已验证闭环列为当前可交付修复，不再继续投入已证伪的 `PNP0C02` upper-filter/function-driver 绑定路径。
+- Windows 下一步改为“先决策、后受控验证”：只有机主明确批准并同步放宽 `AGENTS.md` 资源授权条款，才评估非 PnP KMDF + 固定目标端口 + 主板/ACPI/NCT 拒绝式身份门禁；未批准时维持 `FEED_ONCE` 阻断。
+- 受控验证拆为只读身份门禁 → 只读 SMBus → 单次写回 → 动态闭环 → 失败路径 → 回滚，禁止直接恢复常驻服务。
+- 新工作流明确：不重做 PNP0C02 绑定、不用 WinRing0/InpOut32、不绕过签名策略、不刷 BIOS；任何身份误判、端口不稳定、超时不可恢复、读回不一致或回滚失败均回到 Linux 交付。
+- 当前待机主决策：是否批准上述受控非 PnP 访问模型。测试签名和测试证书仍是机器遗留状态；若不立即开展 Windows 试验，应执行 `patch/windows/experiment-b-rollback.ps1 -RemoveCert` 并重启。
+
+
+## 2026-09-05 工作流复审修订
+
+- 独立复审要求补充并已落实：区分身份依据、访问依据、机主实验批准和正式发布批准；明确当前没有 Windows 独占资源授权，受控非 PnP 模型只能作为目标机实验例外。
+- 明确 `0x2e/0x2f` 仅用于 NCT chip-id 身份探针；明确 SMBus“只读 DIMM 数据”仍会写控制器事务寄存器，需单独批准。
+- 增加进入只读阶段前的驱动加载/卸载、ACL、IOCTL 阻断和安装失败恢复门槛；扩展回滚残留检查和 Microsoft Attestation/WHQL 等正式签名门槛。
+- 复审后的结论：工作流可作为决策和受控试验依据，但不解除当前写回阻断；尚无任何 Windows 端口访问或代码恢复授权。
+
+
 ## 参考资料
 
 - `WORKFLOW.md`：Windows 当前实施和验收流程。

@@ -1,10 +1,10 @@
-/* ramfan-service.c — B850AIGA RAM-FAN Virtual_TEMP 补丁服务（阶段 1：只读）
+/* ramfan-service.c — B850AIGA RAM-FAN Virtual_TEMP 补丁服务（阶段 2）
  *
  * 职责（WORKFLOW.md §3.3）：
  *   - SCM 生命周期：安装/卸载/启动/停止
- *   - 打开驱动设备，执行只读 IOCTL（QUERY_HW / READ_DIMM_TEMP）
- *   - --once：单次查询并返回：成功 0、硬件/I/O 失败 1、参数错误 2
- *   - 阶段 1 不做 0.5s 常驻喂值（阶段 3 才启用），不接触裸端口
+ *   - 打开驱动设备，执行只读检查或一次 FEED_ONCE 写回
+ *   - --once：单次写回并返回：成功 0、硬件/I/O 失败 1、参数错误 2
+ *   - 常驻 0.5s 喂值留到阶段 3，不接触裸端口
  *
  * 构建：MSVC，链接 advapi32（SCM）与 kernel32。
  * 包含共享定义：../driver/ramfan_ioctl.h
@@ -83,8 +83,9 @@ RunReadOnlyCycle(void)
 
     ok = DeviceIoControl(h, IOCTL_RAMFAN_QUERY_HW, NULL, 0,
                          &qh, sizeof(qh), &bytesReturned, NULL);
-    if (!ok) {
-        LogMessage("ERROR: QUERY_HW 失败 GLE=%lu", GetLastError());
+    if (!ok || bytesReturned != sizeof(qh)) {
+        LogMessage("ERROR: QUERY_HW 失败 GLE=%lu bytes=%lu",
+                   GetLastError(), bytesReturned);
         CloseHandle(h);
         return 1;
     }
@@ -100,8 +101,9 @@ RunReadOnlyCycle(void)
     bytesReturned = 0;
     ok = DeviceIoControl(h, IOCTL_RAMFAN_READ_DIMM_TEMP, NULL, 0,
                          &rd, sizeof(rd), &bytesReturned, NULL);
-    if (!ok) {
-        LogMessage("ERROR: READ_DIMM_TEMP 失败 GLE=%lu", GetLastError());
+    if (!ok || bytesReturned != sizeof(rd)) {
+        LogMessage("ERROR: READ_DIMM_TEMP 失败 GLE=%lu bytes=%lu",
+                   GetLastError(), bytesReturned);
         CloseHandle(h);
         return 1;
     }
@@ -117,6 +119,46 @@ RunReadOnlyCycle(void)
     CloseHandle(h);
     return rd.AnySuccess ? 0 : 1;
 }
+
+/* ---- 阶段 2：--once 执行一次完整喂值 ---- */
+static int
+RunFeedOnce(void)
+{
+    HANDLE h;
+    DWORD bytesReturned = 0;
+    RAMFAN_FEED_ONCE_OUT feed = {0};
+    BOOL ok;
+    int i;
+
+    h = OpenDevice();
+    if (h == INVALID_HANDLE_VALUE) {
+        LogMessage("ERROR: 打开设备失败 GLE=%lu（驱动未加载？）", GetLastError());
+        return 1;
+    }
+
+    /* 资源门禁必须由驱动处理；这里不先调用 QUERY_HW，避免先访问端口。 */
+    ok = DeviceIoControl(h, IOCTL_RAMFAN_FEED_ONCE, NULL, 0,
+                         &feed, sizeof(feed), &bytesReturned, NULL);
+    if (!ok || bytesReturned != sizeof(feed)) {
+        LogMessage("ERROR: FEED_ONCE 失败 GLE=%lu bytes=%lu",
+                   GetLastError(), bytesReturned);
+        CloseHandle(h);
+        return 1;
+    }
+
+    for (i = 0; i < RAMFAN_SPD_ADDR_COUNT; i++) {
+        const RAMFAN_DIMM_RESULT *slot = &feed.Slots[i];
+        LogMessage("  DIMM 0x%02x: status=%u raw=0x%04x temp=%u°C",
+                   slot->Address, slot->Status, slot->Raw, slot->Celsius);
+    }
+    LogMessage("FEED_ONCE: status=%u max=%u°C written=%u°C readback=%u°C",
+               feed.Status, feed.MaxCelsius, feed.WrittenCelsius,
+               feed.ReadBackCelsius);
+
+    CloseHandle(h);
+    return feed.Status == RAMFAN_FEED_OK ? 0 : 1;
+}
+
 
 /* ---- SCM ---- */
 static DWORD WINAPI
@@ -143,6 +185,8 @@ ServiceCtrlHandler(DWORD control, DWORD eventType, LPVOID eventData, LPVOID cont
 static VOID WINAPI
 ServiceMain(DWORD argc, LPWSTR *argv)
 {
+    int readStatus = 1;
+    int attempt;
     UNREFERENCED_PARAMETER(argc);
     UNREFERENCED_PARAMETER(argv);
 
@@ -169,10 +213,25 @@ ServiceMain(DWORD argc, LPWSTR *argv)
         return;
     }
 
-    /* 阶段 1：启动时执行一次只读检查并记录；不常驻喂值 */
-    LogMessage("SERVICE START (stage 1 read-only check)");
-    RunReadOnlyCycle();
-
+    /* 阶段 2：启动时只做只读检查；失败时有限重试，不执行 FEED_ONCE。 */
+    LogMessage("SERVICE START (stage 2 read-only check)");
+    for (attempt = 0; attempt < 3; attempt++) {
+        readStatus = RunReadOnlyCycle();
+        if (readStatus == 0 || g_StopEvent == NULL ||
+            WaitForSingleObject(g_StopEvent, 1000) == WAIT_OBJECT_0) {
+            break;
+        }
+        LogMessage("WARN: 只读检查失败，准备第 %d 次重试", attempt + 2);
+    }
+    if (readStatus != 0) {
+        LogMessage("ERROR: 只读检查重试仍失败，服务停止");
+        CloseHandle(g_StopEvent);
+        g_StopEvent = NULL;
+        g_Status.dwCurrentState = SERVICE_STOPPED;
+        g_Status.dwWin32ExitCode = ERROR_DEVICE_NOT_CONNECTED;
+        SetServiceStatus(g_StatusHandle, &g_Status);
+        return;
+    }
     g_Status.dwCurrentState = SERVICE_RUNNING;
     g_Status.dwCheckPoint = 0;
     SetServiceStatus(g_StatusHandle, &g_Status);
@@ -215,7 +274,7 @@ InstallService(void)
         svc = OpenServiceW(scm, RAMFAN_SERVICE_NAME, SERVICE_ALL_ACCESS);
     }
     if (svc != NULL) {
-        desc.lpDescription = (LPWSTR)L"向 NCT Virtual_TEMP 喂入 DIMM 温度（阶段 1 只读检查）";
+        desc.lpDescription = (LPWSTR)L"RAMFan 阶段 2开发测试；FEED_ONCE 当前受端口资源门禁阻断";
         ChangeServiceConfig2W(svc, SERVICE_CONFIG_DESCRIPTION, &desc);
         CloseServiceHandle(svc);
     }
@@ -275,6 +334,11 @@ main(int argc, char **argv)
         }
     }
 
+    if (once + install + uninstall > 1) {
+        printf("参数互斥：--once、--install、--uninstall 只能选择一个。\n");
+        return 2;
+    }
+
     if (install) {
         return InstallService();
     }
@@ -282,7 +346,7 @@ main(int argc, char **argv)
         return UninstallService();
     }
     if (once) {
-        return RunReadOnlyCycle();
+        return RunFeedOnce();
     }
 
     /* 默认：作为 SCM 服务运行 */

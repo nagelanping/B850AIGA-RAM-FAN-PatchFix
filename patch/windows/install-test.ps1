@@ -1,4 +1,4 @@
-# install-test.ps1 — 测试签名安装 ramfan 驱动（阶段 1 只读版）
+# install-test.ps1 — 测试签名安装 ramfan 驱动（阶段 2 开发测试版）
 # 仅用于开发测试，不绕过 Secure Boot 策略；Secure Boot 开启时拒绝安装并说明。
 # 前置：build.ps1 构建成功；管理员 PowerShell。
 param(
@@ -33,12 +33,17 @@ if ($secureBoot -eq $true) {
 } elseif ($secureBoot -eq $false) {
     Write-Host "Secure Boot: 关闭（测试签名驱动可加载）"
 } else {
-    Write-Host "Secure Boot: 无法查询（按未启用处理，继续）"
+    throw '无法查询 Secure Boot 状态：为安全起见中止测试签名安装。'
 }
 
 # ---- 测试签名开关检查 ----
 $tsLine = bcdedit /enum '{current}' | Select-String 'testsigning' | Select-Object -First 1
 $testsigning = if ($null -ne $tsLine) { $tsLine.ToString().Trim() } else { 'unknown' }
+$stateDir = 'C:\ProgramData\RAMFan'
+$statePath = Join-Path $stateDir 'test-state.json'
+New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
+@{ SecureBoot = [bool]$secureBoot; TestSigningWasOn = ($testsigning -match 'Yes') } | ConvertTo-Json | Set-Content -Path $statePath -Encoding UTF8
+Write-Host "已保存测试前状态: $statePath"
 Write-Host "测试签名策略: $testsigning"
 if ($testsigning -notmatch 'Yes') {
     if ($EnableTestSigning) {
@@ -48,7 +53,7 @@ if ($testsigning -notmatch 'Yes') {
         Write-Host '已启用测试签名。请重启后重新运行本脚本。' -ForegroundColor Yellow
         exit 0
     }
-    Write-Host '提示: 测试签名未开启。重新运行加 -EnableTestSigning 可自动开启（需重启）。' -ForegroundColor Yellow
+    throw '测试签名未开启：请加 -EnableTestSigning，重启后重新运行脚本。'
 }
 
 # ---- 定位构建产物 ----
@@ -74,8 +79,8 @@ if ($SignDriver) {
     # 自签证书必须同时导入 TrustedPublisher 与 Root，否则 sc start 报签名无效 (577/STATUS_INVALID_IMAGE_HASH)
     $cerPath = Join-Path $env:TEMP "$certName.cer"
     Export-Certificate -Cert $cert -FilePath $cerPath -Force | Out-Null
-    Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\LocalMachine\TrustedPublisher -Force | Out-Null
-    Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\LocalMachine\Root -Force | Out-Null
+    Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\LocalMachine\TrustedPublisher | Out-Null
+    Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
     Write-Host "测试证书已导入 LocalMachine 信任存储: $certName"
     & $signtool.FullName sign /v /s My /n $certName /t http://timestamp.digicert.com $sys
     if ($LASTEXITCODE -ne 0) {
@@ -96,11 +101,11 @@ sc.exe delete RAMFanDriver 2>$null | Out-Null
 
 $driverDir = "$env:SystemRoot\System32\drivers"
 Copy-Item $sys (Join-Path $driverDir 'ramfan.sys') -Force
-sc.exe create RAMFanDriver type= kernel start= demand binPath= "$driverDir\ramfan.sys" DisplayName= "RAMFan VirtualTEMP driver (stage1)"
+sc.exe create RAMFanDriver type= kernel start= demand binPath= "$driverDir\ramfan.sys" DisplayName= "RAMFan VirtualTEMP driver (stage2)"
 if ($LASTEXITCODE -ne 0) { throw 'sc create RAMFanDriver 失败' }
 Write-Host '驱动服务已创建（DEMAND_START）。'
 
-# ---- 安装用户态服务（阶段 1：仅注册，不自动启动） ----
+# ---- 安装用户态服务（阶段 2：FEED_ONCE 保留但受资源门禁，常驻喂值留阶段 3） ----
 Write-Host "`n=== 安装用户态服务 ==="
 $serviceDir = "$env:ProgramFiles\RAMFan"
 New-Item -ItemType Directory -Path $serviceDir -Force | Out-Null
@@ -108,10 +113,9 @@ Copy-Item $exe (Join-Path $serviceDir 'ramfan-service.exe') -Force
 & (Join-Path $serviceDir 'ramfan-service.exe') --install
 if ($LASTEXITCODE -ne 0) { throw '服务注册失败' }
 
-Write-Host "`n=== 验证步骤（阶段 1） ==="
-Write-Host "1. 启动驱动:   sc start RAMFanDriver"
-Write-Host "2. 单次检查:   & \"$serviceDir\ramfan-service.exe\" --once"
-Write-Host "   期望输出:   QUERY_HW: SMBusBase=0xb00 ChipId=d802 HwMatched=1"
-Write-Host "               READ_DIMM_TEMP: 2 个槽 OK，温度合理（0..120°C）"
+Write-Host "`n=== 验证步骤（阶段 2，资源模型解决前禁止执行） ==="
+Write-Host "1. 当前不要启动驱动或服务进行真实硬件访问。"
+Write-Host "2. 资源模型解决后再运行: & `"$serviceDir\ramfan-service.exe`" --once"
+Write-Host "   当前预期 status=4，且不写 NCT。"
 Write-Host "3. 卸载回滚:   pwsh -File uninstall.ps1"
-Write-Host "`n注意：阶段 1 驱动只读，不写 NCT。停止其他会访问 0x295/0x296 的工具。"
+Write-Host "`n注意：执行前停止其他会访问 0x295/0x296 的工具；常驻喂值留到阶段 3。"

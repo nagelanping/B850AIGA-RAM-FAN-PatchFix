@@ -1,16 +1,15 @@
-/* ramfan.c — B850AIGA RAM-FAN Virtual_TEMP 补丁驱动（阶段 1：只读）
+/* ramfan.c — B850AIGA RAM-FAN Virtual_TEMP 补丁驱动（阶段 2）
  *
- * 阶段 1 范围（WORKFLOW.md §4 阶段 1）：
- *   - 驱动加载/卸载、设备句柄、IOCTL 通路
- *   - 硬件识别：定位 AMD FCH SMBus 控制器（VEN_1022&DEV_790B）并从其
- *     PCI BAR 获取 SMBus 基址；通过 NCT 标准 SIO（0x2e/0x2f）读取 chip id
- *   - 只读 SMBus DIMM 温度读取（IOCTL_RAMFAN_READ_DIMM_TEMP）
- *   - 禁止写 NCT（页 0x0c/reg 0x36 写回在阶段 2 实现）
+ * 阶段 2 范围（WORKFLOW.md §4 阶段 2）：
+ * 阶段 2范围（当前安全阻断）：
+ *   - 保留 IOCTL_RAMFAN_FEED_ONCE 接口，但在资源模型解决前立即返回
+ *     RAMFAN_FEED_HW_UNAVAILABLE，不访问 SMBus/NCT，不执行写回。
+ *   - 服务常驻喂值留到阶段 3；禁止改写 BIOS、曲线或 page 0x09 温度源寄存器。
  *
  * 驱动模型：非 PnP 遗留内核驱动 + KMDF 对象。WdfDriverInitNonPnpDriver
  * 模式下 EvtDriverDeviceAdd 不会被调用，设备在 DriverEntry 中手动创建
- * （WdfDeviceInitAllocate + WdfDeviceCreate）。绑定设备资源/PnP 访问
- * 模型的完整方案在阶段 2 实机验证（见 WORKFLOW.md §3.2、README.md）。
+ * （WdfControlDeviceInitAllocate + WdfDeviceCreate）。硬件访问顺序由串行队列
+ * 保证本驱动内不交错；不能与外部硬件监控程序原子化。
  */
 #include "ramfan.h"
 
@@ -137,6 +136,24 @@ RamFanCreateDevice(WDFDRIVER Driver)
     return STATUS_SUCCESS;
 }
 
+/* ---- 阶段 2：一次完整读取、校验、写回 ---- */
+static NTSTATUS
+RamFanFeedOnce(RAMFAN_DEVICE_EXTENSION *ext,
+                RAMFAN_FEED_ONCE_OUT *out)
+{
+    /*
+     * 当前仍是非 PnP 控制设备：没有 EvtDevicePrepareHardware，也没有
+     * translated resource list。PCI BAR/ACPI _CRS 证据不能授权本设备访问
+     * 端口，尤其不能授权独立 PNP0C02 的 NCT 端口。
+     *
+     * 资源模型解决前，FEED_ONCE 必须在任何硬件访问前失败，绝不写 NCT。
+     */
+    UNREFERENCED_PARAMETER(ext);
+    out->Status = RAMFAN_FEED_HW_UNAVAILABLE;
+    return STATUS_SUCCESS;
+}
+
+
 /* ---- EvtIoDeviceControl ---- */
 VOID
 RamFanEvtIoDeviceControl(WDFQUEUE Queue,
@@ -253,6 +270,34 @@ RamFanEvtIoDeviceControl(WDFQUEUE Queue,
         break;
     }
 
+    case IOCTL_RAMFAN_FEED_ONCE: {
+        RAMFAN_FEED_ONCE_OUT out = {0};
+        WDFDEVICE device;
+        RAMFAN_DEVICE_EXTENSION *ext;
+
+        if (OutputBufferLength < sizeof(out)) {
+            status = STATUS_BUFFER_TOO_SMALL;
+            break;
+        }
+
+        device = WdfIoQueueGetDevice(Queue);
+        ext = RamFanGetDeviceContext(device);
+        status = RamFanFeedOnce(ext, &out);
+        if (!NT_SUCCESS(status)) {
+            break;
+        }
+
+        status = WdfRequestRetrieveOutputBuffer(Request, sizeof(out),
+                                                 &outBuffer, &outLen);
+        if (!NT_SUCCESS(status)) {
+            break;
+        }
+        RtlCopyMemory(outBuffer, &out, sizeof(out));
+        WdfRequestSetInformation(Request, sizeof(out));
+        status = STATUS_SUCCESS;
+        break;
+    }
+
     default:
         break;
     }
@@ -280,4 +325,3 @@ RamFanEvtFileClose(WDFFILEOBJECT FileObject)
 {
     UNREFERENCED_PARAMETER(FileObject);
 }
-

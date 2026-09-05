@@ -1,6 +1,6 @@
 #pragma once
 
-// ramfan_ioctl.h — 驱动与服务共享的 IOCTL 定义（阶段 1：只读）
+// ramfan_ioctl.h — 驱动与服务共享的 IOCTL 定义（阶段 2：FEED_ONCE 写回）
 // 用户态（服务）与内核态（驱动）都可包含，不依赖 ntddk.h/wdf.h。
 // 所有常量来自 LOG.md 已确认事实，禁止改动温度源/曲线相关寄存器。
 
@@ -24,7 +24,7 @@ extern "C" {
 #define HST_DAT0_OFF  0x05
 #define HST_DAT1_OFF  0x06
 
-// SMBus 状态位（实测：0x02 可出现在成功事务，不能单独判失败；0x04 为无设备/CRC）
+// SMBus 状态位（实测：0x02 可出现在成功事务；0x04 可能是无设备或 CRC）
 #define HST_STS_BUSY  0x01
 #define HST_STS_OK2   0x02
 #define HST_STS_ERR   0x04
@@ -42,7 +42,7 @@ extern "C" {
 #define RAMFAN_SPD_ADDR_51 0x51
 #define RAMFAN_SPD_ADDR_50 0x50
 
-// ---- NCT SIO 自定义端口（页选择与 Virtual_TEMP 写回，阶段 2 使用）----
+// ---- NCT SIO 自定义端口（资源授权后才允许使用）----
 #define NCT_SIO_IDX 0x295
 #define NCT_SIO_DAT 0x296
 
@@ -54,6 +54,11 @@ extern "C" {
 #define NCT_EXPECTED_CHIP_ID_HI 0xd8
 #define NCT_EXPECTED_CHIP_ID_LO 0x02
 
+
+// Virtual_TEMP 写回目标（LOG.md 已确认：page 0x0c、reg 0x36，°C×1）
+// 禁止写 page 0x09 的曲线/模式/温度源寄存器
+#define NCT_VIRT_TEMP_PAGE 0x0c
+#define NCT_VIRT_TEMP_REG  0x36
 // ---- 温度范围（LOG.md：0..120°C 有效）----
 #define RAMFAN_TEMP_MIN 0
 #define RAMFAN_TEMP_MAX 120
@@ -74,8 +79,9 @@ typedef struct _RAMFAN_DIMM_RESULT {
 #define RAMFAN_DIMM_TIMEOUT     2
 #define RAMFAN_DIMM_BUS_ERR     3
 #define RAMFAN_DIMM_BAD_DATA    4
+#define RAMFAN_DIMM_UNCHECKED  5
 
-// ---- IOCTL（阶段 1：只读；阶段 2 才加 FEED_ONCE，禁止裸端口暴露）----
+// ---- IOCTL（阶段 1 只读 + 阶段 2 FEED_ONCE；禁止裸端口暴露） ----
 #define RAMFAN_IOCTL_BASE FILE_DEVICE_UNKNOWN
 
 // 输出：SMBus 基址、chip id、硬件匹配标志
@@ -93,6 +99,23 @@ typedef struct _RAMFAN_READ_DIMM_OUT {
     unsigned char  AnySuccess;            // 非零=至少一个槽成功
     RAMFAN_DIMM_RESULT Slots[RAMFAN_SPD_ADDR_COUNT];
 } RAMFAN_READ_DIMM_OUT;
+
+// ---- FEED_ONCE 输出（阶段 2 草稿；资源未授权时不得写回） ----
+// Status: 0=成功写入并读回一致 1=读取失败未写 2=写入失败/读回不一致
+//         3=硬件不匹配 4=端口资源/访问模型未授权
+typedef struct _RAMFAN_FEED_ONCE_OUT {
+    unsigned char  Status;           // RAMFAN_FEED_* 值
+    unsigned char  MaxCelsius;       // 本轮最高有效温度（读取全部成功时）
+    unsigned char  WrittenCelsius;   // 实际写入 NCT 的值（未写时 0）
+    unsigned char  ReadBackCelsius;  // 写入后读回值（未写时 0）
+    RAMFAN_DIMM_RESULT Slots[RAMFAN_SPD_ADDR_COUNT];
+} RAMFAN_FEED_ONCE_OUT;
+
+#define RAMFAN_FEED_OK             0
+#define RAMFAN_FEED_READ_FAILED    1
+#define RAMFAN_FEED_WRITE_FAILED   2
+#define RAMFAN_FEED_HW_MISMATCH    3
+#define RAMFAN_FEED_HW_UNAVAILABLE 4
 
 #ifndef CTL_CODE
 #define CTL_CODE(DeviceType, Function, Method, Access) \
@@ -112,6 +135,8 @@ typedef struct _RAMFAN_READ_DIMM_OUT {
     CTL_CODE(RAMFAN_IOCTL_BASE, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_RAMFAN_READ_DIMM_TEMP \
     CTL_CODE(RAMFAN_IOCTL_BASE, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_RAMFAN_FEED_ONCE \
+    CTL_CODE(RAMFAN_IOCTL_BASE, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 #ifdef __cplusplus
 }

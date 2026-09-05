@@ -1,17 +1,14 @@
 /* hw.c — 硬件识别与只读访问（阶段 1）
  *
  * 实现（全部来自 LOG.md 已确认事实，不重新调查）：
- *   - RamFanFindSmbusBase：扫描 PCI 配置空间定位 AMD FCH SMBus 控制器
- *     （VEN_1022&DEV_790B），从其 BAR0 读取 SMBus I/O 基址；PCI 路径
- *     不可用时回退到实机已确认的 ACPI 固定基址 0xb00（PNP0C02\700 声明
- *     0xb00-0xb0f）。WORKFLOW §3.2 要求以 PCI/ACPI 资源为准，不能无条件
- *     硬编码，此处回退值有实机证据支持并在 README 记录。
+ *   - RamFanFindSmbusBase：阶段 1 的只读探测辅助；它不能证明当前驱动
+ *     拥有 translated resource。阶段 2 写回在资源模型解决前被明确禁用。
  *   - RamFanProbeNctChipId：NCT 标准 SIO（0x2e/0x2f）解锁后读 0x20/0x21，
  *     实测 0xd8 0x02（NCT6796D-S）。读后写 0xaa 锁定，不留配置模式。
  *   - RamFanSmbusReadWord：模拟固件 HST word-read 序列，带 100ms 超时。
  *   - RamFanCelsiusFromRaw：(raw << 3) >> 5 再 ×25/100。
  *
- * 阶段 1 禁止写 NCT 自定义端口（0x295/0x296 页 0x0c/reg 0x36 在阶段 2）。
+ * 阶段 1 禁止写 NCT 自定义端口（0x295/0x296）。阶段 2 写回仍被资源门禁阻止。
  */
 #include "ramfan.h"
 /* HalGetBusDataByOffset 由 ntddk.h 声明（ramfan.h 已包含），无需 hal.h */
@@ -21,8 +18,8 @@
 #define PCI_CFG_VENDOR_OFF     0x00
 #define PCI_CFG_BAR0_OFF       0x10
 
-/* ACPI PNP0C02\700 已声明 0xb00-0xb0f（实机确认），PCI BAR 不可用时的回退 */
-#define RAMFAN_SMBUS_FALLBACK  0xb00
+/* 仅用于阶段 1 只读诊断；不是当前驱动的 translated resource。 */
+#define RAMFAN_SMBUS_DIAGNOSTIC_BASE  0xb00
 
 /* ---- PCI 配置空间读取（bus 0-15，device 0-31，function 0-7） ---- */
 static NTSTATUS
@@ -84,8 +81,8 @@ RamFanFindSmbusBase(USHORT *baseOut)
         }
     }
 
-    /* PCI 路径不可用：回退到 ACPI 已确认基址（见文件头注释） */
-    *baseOut = RAMFAN_SMBUS_FALLBACK;
+    /* 阶段 1 诊断回退；写回路径不得把它当作资源授权。 */
+    *baseOut = RAMFAN_SMBUS_DIAGNOSTIC_BASE;
     return STATUS_SUCCESS;
 }
 
@@ -119,6 +116,8 @@ RamFanProbeNctChipId(UCHAR *hi, UCHAR *lo)
 }
 
 /* ---- SMBus HST word read（模拟固件序列，100ms 超时） ---- */
+static BOOLEAN g_SmbusRecoveryFailed;
+
 NTSTATUS
 RamFanSmbusReadWord(USHORT base, UCHAR addr7, UCHAR cmd, USHORT *rawOut)
 {
@@ -126,6 +125,10 @@ RamFanSmbusReadWord(USHORT base, UCHAR addr7, UCHAR cmd, USHORT *rawOut)
     LARGE_INTEGER start, now, freq;
     LONGLONG timeoutTicks;
     UCHAR st, d0, d1;
+    ULONG recovery;
+    if (g_SmbusRecoveryFailed) {
+        return STATUS_DEVICE_BUSY;
+    }
 
     /* 清状态 */
     WRITE_PORT_UCHAR(hst + HST_STS_OFF, 0xff);
@@ -150,15 +153,25 @@ RamFanSmbusReadWord(USHORT base, UCHAR addr7, UCHAR cmd, USHORT *rawOut)
         }
         now = KeQueryPerformanceCounter(NULL);
         if (now.QuadPart - start.QuadPart > timeoutTicks) {
-            return STATUS_IO_TIMEOUT;
+            /* 有限清理：清除状态并确认 BUSY 是否自行解除，不强制复位共享控制器。 */
+            WRITE_PORT_UCHAR(hst + HST_STS_OFF, 0xff);
+            for (recovery = 0; recovery < 100; recovery++) {
+                st = READ_PORT_UCHAR(hst + HST_STS_OFF);
+                if (!(st & HST_STS_BUSY)) {
+                    return STATUS_IO_TIMEOUT;
+                }
+                KeStallExecutionProcessor(10); /* 最多再等 1ms */
+            }
+            g_SmbusRecoveryFailed = TRUE;
+            return STATUS_DEVICE_BUSY;
         }
         KeStallExecutionProcessor(10); /* 10 us */
     }
 
-    /* 状态检查：0x04=无设备/CRC 错误；0x02 是成功标志，不能判失败 */
+    /* 0x04 可能是空槽 NACK，也可能是 CRC/总线异常；不能冒充空槽。 */
     st = READ_PORT_UCHAR(hst + HST_STS_OFF);
     if (st & HST_STS_ERR) {
-        return STATUS_DEVICE_NOT_CONNECTED;
+        return STATUS_DATA_ERROR;
     }
 
     d0 = READ_PORT_UCHAR(hst + HST_DAT0_OFF);

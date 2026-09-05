@@ -1,6 +1,6 @@
 #pragma once
 
-// ramfan.h — 驱动侧声明（阶段 1：只读）
+// ramfan.h — 驱动侧声明（阶段 2 草稿；写回受资源门禁）
 // 共享常量/IOCTL 定义在 ramfan_ioctl.h（服务也包含）。
 
 #include <ntddk.h>

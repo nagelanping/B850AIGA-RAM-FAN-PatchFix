@@ -51,8 +51,10 @@ WDM 仅在目标机无法使用 KMDF 时评估。禁止先实现 GUI、配置协
 
 ### 3.2 端口与 SMBus 实现要求
 
-1. 不要在代码中无条件假设 SMBus 基址永远是 `0xb00`。首轮 Windows 实机先确认 PCI/FCH 资源；若资源仍为 `0xb00`，驱动使用该值并在启动日志记录。若变化，按 PCI 资源获取结果使用，并拒绝不符合预期的端口范围。
-2. 先确定驱动绑定的 PnP 设备和 translated resource list 是否包含 SMBus 端口；`0x295/0x296` 若不属于该资源，不能仅凭固定地址直接使用，必须先完成资源/访问模型验证。驱动启动时检查目标硬件身份（PCI FCH SMBus 控制器和 NCT chip id）；不匹配则设备不可用。
+1. 不要在代码中无条件假设 SMBus 基址永远是 `0xb00`。只有绑定 AMD SMBus PCI 设备的 PnP upper-filter 在 `EvtDevicePrepareHardware` 收到 translated resource 后，才能使用该资源；`0xb00` 只作为当前已知诊断结果。
+2. SMBus 与 NCT 是两个独立资源所有者：AMD PCI SMBus upper-filter 只持有 SMBus 资源；独立 `PNP0C02` NCT 设备若能合法绑定，才可持有覆盖 `0x295/0x296` 的 translated resource。不能由一个设备的资源推断另一个设备的端口权限。
+2a. 当前非 PnP 控制设备没有 `EvtDevicePrepareHardware` 或 translated resource list。资源模型解决前，`FEED_ONCE` 必须在任何硬件访问前返回 `RAMFAN_FEED_HW_UNAVAILABLE`；不得安装测试或执行真实写回。
+2b. 标准 SIO `0x2e/0x2f` 也必须单独出现在合法 translated resource 中并完成身份访问验证；不能用 `0x295/0x296` 或历史 `0xd802` 证据替代。
 3. 每个 SPD 地址执行完整 HST word-read：清状态、写从地址读格式、写命令 `0x31`、启动 `0x4c`、轮询 BUSY、检查错误位、读取两个数据字节。
 4. BUSY 超时、`0x04` 或其他明确错误、非法 raw、换算结果不在 `0..120°C` 均视为该地址失败。
 5. 首轮先用 HWiNFO/只读 SMBus 结果建立“已安装 DIMM”与 SPD 地址的映射。空槽 NACK 不算故障；已安装地址的超时、总线错误或异常状态算该轮失败。只有所有已安装 DIMM 都成功才写 NCT；首版取最高值，不用剩余低温值降速。
@@ -87,9 +89,13 @@ WDM 仅在目标机无法使用 KMDF 时评估。禁止先实现 GUI、配置协
 
 质量门：驱动能加载/卸载，服务能打开设备；错误状态可观察；不匹配硬件时拒绝工作；不会触碰风扇寄存器。
 
-### 阶段 2：一次性写回闭环
+### 阶段 2：一次性写回闭环（资源模型通过后）
 
-加入 `IOCTL_RAM_FAN_FEED_ONCE` 的完整事务和 `--once` 服务入口。安装测试签名驱动前保存 Secure Boot / BCD 原状；测试结束恢复原设置。开发机先验证错误路径，再由机主在目标板执行：
+当前阶段 2只保留 `IOCTL_RAM_FAN_FEED_ONCE` 接口，资源模型未通过前立即返回 `RAMFAN_FEED_HW_UNAVAILABLE`，禁止安装、真实端口访问和写回。
+
+先将驱动迁移为可接收 PnP 资源的模型：AMD SMBus 使用 PCI upper-filter；NCT 端口必须由独立、经确认可绑定的 `PNP0C02` 设备持有。两个设备均在 `EvtDevicePrepareHardware` 获得合法 translated resources 后，才恢复完整事务和 `--once` 写回。
+
+资源模型确认后，保存 Secure Boot / BCD 原状；开发机先验证错误路径，再由机主在目标板执行：
 
 1. 记录 `fan5/pwm5` 基线以及 NCT 原值；
 2. 停止 Linux 或其他硬件监控写入方，避免同时访问 `0x295/0x296`；

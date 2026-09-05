@@ -20,6 +20,17 @@ if (Test-Path $sys) {
     Remove-Item $sys -Force
 }
 
+
+$statePath = 'C:\ProgramData\RAMFan\test-state.json'
+if (Test-Path $statePath) {
+    $state = Get-Content $statePath -Raw | ConvertFrom-Json
+    if (-not [bool]$state.TestSigningWasOn) {
+        Write-Host '恢复测试签名状态: bcdedit /set testsigning off'
+        bcdedit /set testsigning off | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw '恢复 testsigning 状态失败' }
+    }
+    Remove-Item $statePath -Force
+}
 Write-Host '=== 可选清理 ==='
 Write-Host '若不再需要测试签名，可执行: bcdedit /set testsigning off（需重启）'
-Write-Host '卸载完成。驱动停止不会清除 NCT 最后一次写入值（本阶段只读，未写 NCT）。'
+Write-Host '卸载完成。驱动停止不会清除 NCT 最后一次写入值（当前资源门禁下未写 NCT）。'

@@ -8,6 +8,13 @@
  * 控制设备仅保留 IOCTL 兼容入口；旧 hw.c 不再编译或调用。
  */
 #include "ramfan.h"
+#include <devpkey.h>
+
+static const DEVPROPKEY RamFanDeviceInstanceIdKey = {
+    {0x78c34fc8, 0x104a, 0x4aca,
+     {0x9e, 0xa4, 0x52, 0x4d, 0x52, 0x99, 0x6e, 0x57}},
+    256
+};
 
 /* 控制设备上下文；它不拥有 PnP translated resources。 */
 typedef struct _RAMFAN_DEVICE_EXTENSION {
@@ -140,6 +147,54 @@ static VOID
 RamFanResetPnpContext(RAMFAN_PNP_CONTEXT *Context)
 {
     RtlZeroMemory(Context, sizeof(*Context));
+}
+
+static UCHAR
+RamFanQueryExpectedRole(WDFDEVICE Device)
+{
+    WDFMEMORY memory;
+    WDF_DEVICE_PROPERTY_DATA propertyData;
+    DEVPROPTYPE propertyType;
+    PWCHAR instanceId;
+    UNICODE_STRING instance;
+    UNICODE_STRING smbusInstance = RTL_CONSTANT_STRING(L"ACPI\\PNP0C02\\700");
+    UNICODE_STRING nctInstance = RTL_CONSTANT_STRING(L"ACPI\\PNP0C02\\0");
+    NTSTATUS status;
+
+    WDF_DEVICE_PROPERTY_DATA_INIT(&propertyData, &RamFanDeviceInstanceIdKey);
+    status = WdfDeviceAllocAndQueryPropertyEx(Device,
+                                               &propertyData,
+                                               NonPagedPoolNx,
+                                               WDF_NO_OBJECT_ATTRIBUTES,
+                                               &memory,
+                                               &propertyType);
+    if (!NT_SUCCESS(status)) {
+        return RAMFAN_ROLE_NONE;
+    }
+
+    if (propertyType != DEVPROP_TYPE_STRING) {
+        WdfObjectDelete(memory);
+        return RAMFAN_ROLE_NONE;
+    }
+
+    instanceId = (PWCHAR)WdfMemoryGetBuffer(memory, NULL);
+    if (instanceId == NULL) {
+        WdfObjectDelete(memory);
+        return RAMFAN_ROLE_NONE;
+    }
+
+    RtlInitUnicodeString(&instance, instanceId);
+    if (RtlEqualUnicodeString(&instance, &smbusInstance, TRUE)) {
+        WdfObjectDelete(memory);
+        return RAMFAN_ROLE_SMBUS;
+    }
+    if (RtlEqualUnicodeString(&instance, &nctInstance, TRUE)) {
+        WdfObjectDelete(memory);
+        return RAMFAN_ROLE_NCT;
+    }
+
+    WdfObjectDelete(memory);
+    return RAMFAN_ROLE_NONE;
 }
 
 static VOID
@@ -283,6 +338,7 @@ RamFanEvtPrepareHardware(WDFDEVICE Device,
 {
     RAMFAN_PNP_CONTEXT *context;
     ULONG descriptorIndex;
+    UCHAR expectedRole;
 
     UNREFERENCED_PARAMETER(ResourcesRaw);
 
@@ -292,6 +348,8 @@ RamFanEvtPrepareHardware(WDFDEVICE Device,
     if (ResourcesTranslated == NULL) {
         return STATUS_SUCCESS;
     }
+
+    expectedRole = RamFanQueryExpectedRole(Device);
 
     for (descriptorIndex = 0;
          descriptorIndex < WdfCmResourceListGetCount(ResourcesTranslated);
@@ -355,11 +413,13 @@ RamFanEvtPrepareHardware(WDFDEVICE Device,
         }
     }
 
-    if (context->SmbusPresent && !context->SmbusAmbiguous &&
+    if (expectedRole == RAMFAN_ROLE_SMBUS &&
+        context->SmbusPresent && !context->SmbusAmbiguous &&
         !context->NctAmbiguous && !context->StandardSioAmbiguous &&
         !context->NctPresent && !context->StandardSioPresent) {
         context->Role = RAMFAN_ROLE_SMBUS;
-    } else if (context->NctPresent && !context->NctAmbiguous &&
+    } else if (expectedRole == RAMFAN_ROLE_NCT &&
+               context->NctPresent && !context->NctAmbiguous &&
                context->StandardSioPresent &&
                !context->StandardSioAmbiguous &&
                !context->SmbusAmbiguous && !context->SmbusPresent) {

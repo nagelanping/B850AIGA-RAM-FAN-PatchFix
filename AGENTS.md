@@ -68,7 +68,7 @@ Windows 版本优先采用 **KMDF 内核驱动 + Windows Service**，不把 WinR
 
 - **身份依据**：主板型号、PCI `DEV_790B`、ACPI `PNP0C02` 设备/资源声明、NCT chip id `0xd802`。只用于拒绝式校验：任何一项不匹配即不工作。
 - **访问依据**：当前没有已确认的 Windows 资源持有或独占授权。身份匹配和 ACPI 声明不能推出访问授权；只读 PCI/ACPI 证据不得作为非 PnP 端口访问的合法化依据。
-- **实验批准**：机主于 2026-09-05 批准在本目标机承担共享端口风险的受控实验例外，允许驱动内部对固定白名单端口做**只读身份探针**；批准只覆盖受控实验，不自动变成发布授权。
+- **实验批准**：机主于 2026-09-05 批准在本目标机承担共享端口风险的受控实验例外，允许驱动内部对固定白名单端口做**只读身份探针**；同日批准 **§5.2 第 2 步受控 SMBus 读取试验**（驱动可对白名单基址 `0xb00` 的事务寄存器执行 SPD word-read 读取 DIMM，仅读数据）。批准只覆盖受控实验，不自动变成发布授权。
 - **发布批准**：候选模型默认不具备。正式 Windows 发布仍须满足可信签名（Attestation/WHQL 等）与独立、可验证的访问依据。
 
 受控模型硬约束：
@@ -99,8 +99,8 @@ Windows 版本优先采用 **KMDF 内核驱动 + Windows Service**，不把 WinR
 ### Windows 阶段门槛
 
 1. 记录 Windows 版本、Secure Boot、驱动签名策略、内存条数量、SMBus 控制器和资源信息（已完成）。
-2. 只读身份门禁：驱动加载/卸载、设备句柄、拒绝式身份匹配与只读身份探针；此阶段禁止 SMBus 事务寄存器访问和 NCT 写。
-3. 受控 SMBus 试验：读 DIMM 数据（涉及事务寄存器写入，需单独批准），验证空槽 NACK 与已安装 DIMM 失败语义、状态位、超时与重复读取稳定性。
+2. ✅ 只读身份门禁（已完成并实机验证，2026-09-05）：驱动加载/卸载、设备句柄、拒绝式身份匹配与只读身份探针；本阶段不访问 SMBus 事务寄存器、不写 NCT。
+3. ✅ 受控 SMBus 试验（已批准，2026-09-05）：读 DIMM 数据（命令 `0x31` word-read，地址 `0x53..0x50`），驱动只对白名单基址 `0xb00` 事务寄存器操作；验证空槽 NACK 与已装 DIMM 失败语义、状态位、超时与重复读取稳定性；结果确认前不预判槽语义。
 4. 单次写回：恢复 `FEED_ONCE`，一次完成全读取→校验→最高温→NCT 写回并读回校验。
 5. 常驻服务：0.5 秒调度，验证服务重启、睡眠恢复和系统重启后自动恢复。
 6. 完成静态检查、x64 Release 构建、安装/卸载/回滚、动态温升和日志验证。
@@ -123,7 +123,7 @@ Windows 版本优先采用 **KMDF 内核驱动 + Windows Service**，不把 WinR
 - Windows 中 SPD 7-bit 地址和 SMBus 写入地址字节不要混淆：`0x53` 对应读地址字节 `0xa7`；固件记录的 `0xa6` 是另一种写格式表示。
 - Ghidra 12.1.2 与 JDK26 不兼容；固件分析使用已有 objdump/flat-image 结果，不为 Windows 开发重复建立 Ghidra 流程。
 - 系统无 `xxd` 时使用 `od`。
-- Windows 非 PnP 身份门禁只允许两类只读硬件接触：系统 PnP 枚举注册表 `Enum\PCI\VEN_1022&DEV_790B`（`DEV_790B` 存在性，pci.sys 权威枚举，只读系统信息）与标准 SIO `0x2e/0x2f` 解锁→读 chip id→锁定；不得在身份门禁路径访问 SMBus 事务寄存器（`0xb00` 偏移 `0x00-0x06`）、NCT 自定义端口 `0x295/0x296` 或写 page `0x0c`。`HwMatched` 只要求控制器存在 + chip id==0xd802，不要求 SMBus BAR 等于 0xb00（`SmbusBase` 在控制器存在时返回固定目标基址 `0xb00`，非 PCI BAR 探测）。
+- Windows 身份门禁只接触系统 PnP 枚举注册表 `Enum\PCI\VEN_1022&DEV_790B`（`DEV_790B` 存在性）与标准 SIO `0x2e/0x2f`（chip id 探针）。SMBus 事务寄存器（`0xb00` 偏移 `0x00-0x06`）只在 §5.2 第 2 步批准内由 `READ_DIMM_TEMP` 使用（仅读 DIMM，命令 `0x31`）；NCT 自定义端口 `0x295/0x296` 与写 page `0x0c` 仍禁止。`HwMatched` 只要求控制器存在 + chip id==0xd802，不要求 SMBus BAR 等于 0xb00。
 - 内核服务名沿用历史名 `RAMFanPnP`（2026-09-05 前的实验遗留名），实际是**非 PnP** 内核服务；不要在文档中把它描述为 PnP filter，改名须同步 prep/rollback/WINDOWS.md/回滚验收。
 - 实机证实（2026-09-05）：`HalGetBusDataByOffset` 在此 x64 平台读不到任何 PCI 配置空间（790B 在 bus0/dev20/func0 也失败，legacy CF8/CFC 路径不可用）；不要再尝试用该 API 或端口扫描 PCI，身份门禁的 `DEV_790B` 存在性以 `Enum\PCI` 注册表为准。
 - Windows 实机已验证：目标 `PNP0C02\700`/`\0` 由 machine.inf 提供且 Enum 键无 Service（无功能驱动 FDO），upper filter 无法附加（运行期与开机栈构建均不生效），function-driver 替换被 pnputil/SetupDi/UpdateDriver 拒绝；因此“绑定 PnP 设备持有 translated resources”的 Windows 访问模型在本平台不可行，不得以自声明端口或绕过签名方式交付（WORKFLOW §7，2026-09-05）。已删除的 `resource_model.c` 角色分类逻辑属于该已证伪路径，不得恢复。

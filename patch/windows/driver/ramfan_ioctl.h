@@ -77,24 +77,25 @@ extern "C" {
 // ---- 每个 DIMM 槽的结果 ----
 typedef struct _RAMFAN_DIMM_RESULT {
     unsigned char Address;   // 7-bit SPD 地址
-    unsigned char Status;    // 0=成功 1=NACK(空槽) 2=超时 3=总线错误 4=非法数据
-    unsigned short Raw;      // 原始 word
-    unsigned char Celsius;   // 换算温度（有效时）
+    unsigned char  Status;    // 0=成功 1=NACK(保留给写回阶段) 2=超时 3=总线错误/不确定 4=非法数据
+    unsigned short Raw;      // 原始 word（成功时）
+    unsigned char  Celsius;  // 换算温度（成功且在有效范围时）
+    unsigned char  HstSts;   // 事务后的原始 HST_STS（诊断；0x02 可为成功标志）
 } RAMFAN_DIMM_RESULT;
 
 #define RAMFAN_DIMM_OK          0
-#define RAMFAN_DIMM_NACK        1
+#define RAMFAN_DIMM_NACK        1   /* 保留给写回阶段；第 2 步空槽/无设备以 BUS_ERR+HstSts 呈现 */
 #define RAMFAN_DIMM_TIMEOUT     2
-#define RAMFAN_DIMM_BUS_ERR     3
+#define RAMFAN_DIMM_BUS_ERR     3   /* 0x04/0x06 含空槽 NACK 与 CRC，语义由 §5.2 第 2 步实验确认 */
 #define RAMFAN_DIMM_BAD_DATA    4
 #define RAMFAN_DIMM_UNCHECKED  5
 
-// ---- IOCTL（身份门禁 QUERY_HW 已启用；READ_DIMM_TEMP / FEED_ONCE 未批准前保持阻断）----
+// ---- IOCTL（QUERY_HW 身份门禁与 READ_DIMM_TEMP 受控读取已启用；FEED_ONCE 未批准前保持阻断）----
 #define RAMFAN_IOCTL_BASE FILE_DEVICE_UNKNOWN
 
 // 输出：身份门禁结果（只读探针；不访问 SMBus 事务寄存器、不写 NCT）
 typedef struct _RAMFAN_QUERY_HW_OUT {
-    unsigned short SmbusBase;       // PCI 扫描确认的 FCH SMBus BAR0（I/O 有效时）；0=未取得
+    unsigned short SmbusBase;       // 固定目标基址（控制器存在时=0xb00，ACPI/历史证据值）
     unsigned char  ChipIdHi;        // NCT 标准 SIO 身份探针结果（失败=0xff）
     unsigned char  ChipIdLo;
     unsigned char  ControllerFound; // 1=PCI VEN_1022&DEV_790B 找到

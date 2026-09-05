@@ -4,7 +4,7 @@
 
 - **Linux 0.1 已归档**：实现和完整 Linux 工作记录位于 `archive/0.1/linux/`；发布包仍在 `release/linux/`。
 - **当前工作目标**：实现 Windows KMDF 内核驱动 + Windows Service，持续向 NCT `Virtual_TEMP` 喂入 DIMM 温度。
-- **当前阶段**：§5.2 第 1 步**只读身份门禁已实机验证通过**（`ChipId=d802 ControllerFound=1 ChipIdValid=1 HwMatched=1`，2026-09-05）。NCT chip id 0xd802 经标准 SIO 0x2e/0x2f 在 Windows 实机首次确认；`DEV_790B` 存在性经 `Enum\PCI` 前缀枚举确认。`READ_DIMM_TEMP` / `FEED_ONCE` 保持阻断。下一步：机主批准 §5.2 第 2 步受控 SMBus 试验。
+- **当前阶段**：§5.2 第 1 步身份门禁已实机验证通过；机主于 2026-09-05 批准 **§5.2 第 2 步受控 SMBus 试验**（读 DIMM，允许驱动写 SMBus 事务寄存器 `0xb00` 偏移 0x00..0x06）。驱动已实现 `READ_DIMM_TEMP`（逐槽 word-read 0x53/0x52/0x51/0x50，命令 0x31，温度 0..120 校验），待实机运行确认空槽/失败语义。`FEED_ONCE`（写 NCT）保持阻断。
 ## 根因与目标链路
 
 
@@ -79,7 +79,7 @@ outb((v & 0xf0) | page, 0x296)
 3. ✅ 阶段 1 代码：驱动加载/卸载、硬件识别、设备句柄、只读 SMBus IOCTL；待构建与实机验证（禁止写 NCT）。
 4. ✅ 2026-09-05：机主批准受控非 PnP 模型；驱动重构为非 PnP 控制设备 + 只读身份门禁（§5.2 第 1 步），已构建、纯逻辑自检与子代理审查通过，见 LOG 末尾 2026-09-05 条目。
 5. ✅ 2026-09-05：身份门禁实机验证通过（`HwMatched=1`），结果见 LOG 末尾；回滚完成。
-6. 受控 SMBus 试验（§5.2 第 2 步，读 DIMM）：需机主单独批准后再实现。
+6. ✅ 2026-09-05：机主批准 §5.2 第 2 步受控 SMBus 试验；`READ_DIMM_TEMP` 已实现并通过构建/自检/子代理审查，待实机运行（`--dimm`）确认空槽与失败语义，结果写回 LOG。
 7. 写回（`FEED_ONCE`）与常驻服务（阶段 3/4）：逐级批准 + 独立审查 + 实机证据后恢复。
 
 ## 风险与禁止事项
@@ -292,7 +292,18 @@ outb((v & 0xf0) | page, 0x296)
 - **修正（第二轮）**：`RamFanProbeFchSmbusController` 改为枚举 `Enum\PCI` 子键做 `VEN_1022&DEV_790B` 前缀匹配（`ZwQueryKey`+`ZwEnumerateKey`+`RtlPrefixUnicodeString`，被动池分配、逐项释放）。镜像自检 `test-enum-790b.ps1` 确认前缀匹配命中。
 - **驱动卸载受阻（三轮均同）**：已加载二进制 `sc stop` 返回 1052 无法卸载，SYSTEM32\drivers\ramfan.sys 被占用，只能重启换驱动（实验 B 已见模式）。服务注册表项删除后重启不会自动加载；文件在重启后即可移除。
 - **最终验证（第三轮，重启后）**：`identity-gate-prep.ps1 -Configuration Release` 输出 **`SMBusBase=0x0b00 ChipId=d802 ControllerFound=1 ChipIdValid=1 HwMatched=1`**，身份门禁通过。PCI DEV_790B（Enum\PCI 前缀枚举）与 NCT chip id 0xd802（0x2e/0x2f，Windows 实机首次验证）双证据成立。回滚后服务项删除、驱动文件待重启释放（已删服务不会自载，无残留风险）。
-- **结论**：§5.2 第 1 步只读身份门禁在目标机验证通过。下一步需机主批准 §5.2 第 2 步受控 SMBus 试验（读 DIMM，涉及事务寄存器写入），经独立审查后实现。
+- **结论**：§5.2 第 1 步只读身份门禁在目标机验证通过。
+
+## 2026-09-05 机主批准 §5.2 第 2 步，实现受控 SMBus 读取（READ_DIMM_TEMP）
+
+- **批准**：机主批准 §5.2 第 2 步受控 SMBus 试验——允许驱动对白名单基址 `0xb00` 的事务寄存器（偏移 0x00..0x06）执行 SPD word-read（命令 `0x31`，7-bit 地址 `0x53/0x52/0x51/0x50`），仅读 DIMM 数据；仍不写 NCT（page `0x0c`/`0x295`/`0x296` 均禁止）。
+- **驱动**（`patch/windows/driver/`）：`hw.c` 恢复 `RamFanSmbusReadWord`（base 白名单校验→清状态→写读地址字节 `(addr7<<1)|1`→命令→`HST_CNT 0x4c` 启动→100ms 超时轮询 BUSY→有限清理不强制复位→仅 `st&0x04` 判错→读 DAT0/DAT1→回传原始 `HstSts`）与 `RamFanCelsiusFromRaw`（ULONG 中间值，调用方 0..120 校验）。
+- `ramfan.c` 新增 `RamFanReadDimmTemp`：每次先过身份门禁（不匹配返回 `STATUS_ACCESS_DENIED`，零事务），逐槽 word-read，成功且在范围填 OK/Celsius，越界填 BAD_DATA，超时/设备忙填 TIMEOUT，`0x04`（`STATUS_DATA_ERROR`）填 BUS_ERR（注释：无法区分空槽 NACK 与 CRC，语义留实验分析）；`IOCTL_RAMFAN_READ_DIMM_TEMP` handler 由阻断改为调用。
+- **RAMFAN_DIMM_RESULT 增加 `HstSts`**（事务后原始状态字节，诊断用），结构尺寸不变（6 字节）。
+- **服务**：新增 `--dimm` 控制台模式逐槽打印 Address/Status/Raw/Celsius/HstSts；`--once`/`--install`/`--uninstall` 仍拒绝。
+- **验证**：Debug/Release x64 构建通过；`test-smbus-model.ps1` 新增 `0x06`（0x02|0x04）判错误与 `0x00`→Unknown 断言，与 Linux 实机证据（0x53/0x51→0x02 成功，0x52/0x50→0x06）一致；identity/enum 自检全绿。
+- **子代理独立审查**：无严重代码缺陷。修复项：S1 授权记录同步（本文档/WORKFLOW/AGENTS 补第 2 步批准口径）；L1/L2 过时注释（ramfan.c/ioctl.h 头注释与 SmbusBase 字段）；L3/L6 服务日志字符串参数与身份被拒提示；L4 测试 0x00 语义；L5 NACK 值注释澄清（保留给写回阶段）；M1 记录恢复失败 sticky 语义与串行队列依赖（注释）。
+- **下一步（实机）**：机主/agent 执行 `identity-gate-prep.ps1` 加载驱动后运行 `ramfan-service.exe --dimm`，记录 4 槽状态：已装 DIMM（实机为 2×16GB，预计 `0x53/0x52`）应 OK 且有温度，空槽（`0x51/0x50`）应呈现 NACK/BUS_ERR+`HstSts=0x06`；确认后写回 LOG，再经批准进入单次写回（§5.2 第 3 步）。
 
 ## 参考资料
 

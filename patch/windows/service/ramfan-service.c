@@ -1,6 +1,7 @@
-/* ramfan-service.c — B850AIGA RAM-FAN Virtual_TEMP 补丁服务（受控试验，身份门禁阶段）
+/* ramfan-service.c — B850AIGA RAM-FAN Virtual_TEMP 补丁服务（受控试验，SMBus 读取阶段）
  *
- *   - --identity：只读身份门禁检查（打开驱动设备，QUERY_HW，不访问 SMBus、不写 NCT）
+ *   - --identity：只读身份门禁检查（QUERY_HW，不访问 SMBus、不写 NCT）
+ *   - --dimm：受控 SMBus 读取实验（READ_DIMM_TEMP，读全部候选槽并打印状态；不写 NCT）
  *   - --once / --install / --uninstall：当前仍拒绝（写回与 SCM 生命周期需后续批准）
  *   - 默认 SCM 模式启动时执行一次身份门禁检查；常驻 0.5s 喂值留到后续阶段
  *   - 服务/驱动模型：非 PnP 控制设备（2026-09-05 机主批准）
@@ -104,6 +105,51 @@ RunIdentityGateCheck(void)
     LogMessage("身份门禁通过。");
     return 0;
 }
+
+/* ---- 实验观测：调用 READ_DIMM_TEMP 打印每槽状态（§5.2 第 2 步） ---- */
+/* 返回 0=成功（至少一个槽返回数据） 1=失败/身份不匹配 2=参数错误。不写 NCT。 */
+static int
+RunReadDimm(void)
+{
+    HANDLE h;
+    DWORD bytesReturned = 0;
+    RAMFAN_READ_DIMM_OUT rd = {0};
+    BOOL ok;
+    int i;
+
+    h = OpenDevice();
+    if (h == INVALID_HANDLE_VALUE) {
+        LogMessage("ERROR: 打开设备失败 GLE=%lu（驱动未加载？）", GetLastError());
+        return 1;
+    }
+
+    ok = DeviceIoControl(h, IOCTL_RAMFAN_READ_DIMM_TEMP, NULL, 0,
+                         &rd, sizeof(rd), &bytesReturned, NULL);
+    if (!ok || bytesReturned != sizeof(rd)) {
+        DWORD gle = GetLastError();
+        if (gle == ERROR_ACCESS_DENIED) {
+            LogMessage("ERROR: READ_DIMM_TEMP 被拒（身份门禁未通过或访问被拒）；先运行 --identity 确认 HwMatched=1");
+        } else {
+            LogMessage("ERROR: READ_DIMM_TEMP 失败 GLE=%lu bytes=%lu", gle, bytesReturned);
+        }
+        CloseHandle(h);
+        return 1;
+    }
+
+    LogMessage("READ_DIMM_TEMP: Count=%u AnySuccess=%u MaxCelsius=%u",
+               rd.Count, rd.AnySuccess, rd.MaxCelsius);
+    for (i = 0; i < rd.Count && i < RAMFAN_SPD_ADDR_COUNT; i++) {
+        const RAMFAN_DIMM_RESULT *s = &rd.Slots[i];
+        LogMessage("  DIMM 0x%02x: status=%u raw=0x%04x temp=%uC hst=0x%02x",
+                   s->Address, s->Status, s->Raw, s->Celsius, s->HstSts);
+    }
+    LogMessage("  状态: 0=OK 2=超时 3=总线错误/不确定 4=非法数据 5=未检查；"
+               "0x04/0x06 含空槽 NACK 与 CRC，BUS_ERR 语义由实验分析判定");
+
+    CloseHandle(h);
+    return rd.AnySuccess ? 0 : 1;
+}
+
 
 
 /* ---- 写回：--once 执行一次完整喂值（写回步骤未批准前禁用） ---- */
@@ -317,6 +363,7 @@ main(int argc, char **argv)
 {
     int once = 0;
     int identity = 0;
+    int dimm = 0;
     int install = 0;
     int uninstall = 0;
     int i;
@@ -326,19 +373,21 @@ main(int argc, char **argv)
             once = 1;
         } else if (strcmp(argv[i], "--identity") == 0) {
             identity = 1;
+        } else if (strcmp(argv[i], "--dimm") == 0) {
+            dimm = 1;
         } else if (strcmp(argv[i], "--install") == 0) {
             install = 1;
         } else if (strcmp(argv[i], "--uninstall") == 0) {
             uninstall = 1;
         } else {
             printf("未知参数: %s\n", argv[i]);
-            printf("用法: ramfan-service [--identity|--once|--install|--uninstall]\n");
+            printf("用法: ramfan-service [--identity|--dimm|--once|--install|--uninstall]\n");
             return 2; /* 参数错误 */
         }
     }
 
-    if (once + identity + install + uninstall > 1) {
-        printf("参数互斥：--identity、--once、--install、--uninstall 只能选择一个。\n");
+    if (once + identity + dimm + install + uninstall > 1) {
+        printf("参数互斥：--identity、--dimm、--once、--install、--uninstall 只能选择一个。\n");
         return 2;
     }
 
@@ -350,6 +399,9 @@ main(int argc, char **argv)
     }
     if (identity) {
         return RunIdentityGateCheck();
+    }
+    if (dimm) {
+        return RunReadDimm();
     }
     if (once) {
         return RunFeedOnce();

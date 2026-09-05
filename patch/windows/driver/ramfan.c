@@ -1,15 +1,17 @@
-/* ramfan.c — B850AIGA RAM-FAN 非 PnP 控制设备驱动（只读身份门禁）
+/* ramfan.c — B850AIGA RAM-FAN 非 PnP 控制设备驱动（身份门禁 + 受控 SMBus 读取）
  *
- * 2026-09-05 机主批准受控非 PnP 访问模型（见 AGENTS.md“授权边界”）。
+ * 2026-09-05 机主批准受控非 PnP 访问模型（见 AGENTS.md“授权边界”），
+ * 并批准 §5.2 第 2 步受控 SMBus 试验（读 DIMM；见 LOG.md 2026-09-05 决策记录）。
  * PnP 绑定（upper-filter / function-driver）已证伪移除，不再接收
  * EvtDeviceAdd/translated resources。本驱动以普通内核服务方式加载
  * （sc create type= kernel），创建控制设备 \Device\RamFanVirtTemp。
  *
- * 当前阶段（§5.2 第 1 步）只实现只读身份门禁：
- *   - IOCTL_RAMFAN_QUERY_HW：PCI DEV_790B 存在性 + NCT chip id（0x2e/0x2f），
- *     判定 HwMatched；不访问 SMBus 事务寄存器、不写 NCT。
- *   - IOCTL_RAMFAN_READ_DIMM_TEMP / FEED_ONCE：保持阻断（SMBus 试验与写回
- *     需后续单独批准）。
+ * 阶段（§5.2）：
+ *   - 第 1 步身份门禁（已实机验证）：IOCTL_RAMFAN_QUERY_HW：DEV_790B 存在性
+ *     （Enum\PCI 前缀枚举）+ NCT chip id（0x2e/0x2f）判定 HwMatched。
+ *   - 第 2 步受控 SMBus 读取：IOCTL_RAMFAN_READ_DIMM_TEMP 读全部候选 SPD 槽，
+ *     空槽/失败语义由实验确认；仍不写 NCT。
+ *   - FEED_ONCE（写回）保持阻断，需后续单独批准。
  */
 #include "ramfan.h"
 
@@ -93,6 +95,89 @@ RamFanQueryHw(RAMFAN_QUERY_HW_OUT *out)
     out->Reserved = 0;
     return STATUS_SUCCESS;
 }
+
+/* ---- READ_DIMM_TEMP：受控 SMBus 读取全部候选 DIMM 槽（§5.2 第 2 步） ----
+ * 前置：身份门禁通过（不匹配即拒绝，不做任何 SMBus 事务）。
+ * 逐槽（0x53/0x52/0x51/0x50，命令 0x31 word-read）独立尝试并记录：
+ *   - 成功：换算温度并在 0..120 校验后填 Celsius；
+ *   - 其余（NACK/超时/总线错误/恢复失败）如实记录 Status 与原始 HST_STS。
+ * 本阶段不把某个槽当作“已知空槽”跳过——空槽 NACK 与已装 DIMM 失败的
+ * 区分正是 §5.2 第 2 步要实验确认的语义，映射留给输出分析。
+ * 事务基址固定为白名单 RAMFAN_SMBUS_RESOURCE_START；调用方（EvtIoDeviceControl）
+ * 已在驱动锁/串行队列内。
+ */
+static NTSTATUS
+RamFanReadDimmTemp(RAMFAN_READ_DIMM_OUT *out)
+{
+    static const UCHAR kSpdAddrs[RAMFAN_SPD_ADDR_COUNT] = {
+        RAMFAN_SPD_ADDR_53, RAMFAN_SPD_ADDR_52,
+        RAMFAN_SPD_ADDR_51, RAMFAN_SPD_ADDR_50,
+    };
+    RAMFAN_QUERY_HW_OUT hw;
+    UCHAR maxC = 0;
+    UCHAR anySuccess = 0;
+    UCHAR count = 0;
+    ULONG i;
+    NTSTATUS status;
+
+    RtlZeroMemory(out, sizeof(*out));
+
+    /* 身份门禁：每次读取前确认是目标机；不匹配则不做任何 SMBus 事务。 */
+    status = RamFanQueryHw(&hw);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+    if (!hw.HwMatched) {
+        return STATUS_ACCESS_DENIED;
+    }
+
+    for (i = 0; i < RAMFAN_SPD_ADDR_COUNT; i++) {
+        RAMFAN_DIMM_RESULT *slot = &out->Slots[i];
+        USHORT raw = 0;
+        UCHAR hst = 0;
+
+        slot->Address = kSpdAddrs[i];
+        slot->Status = RAMFAN_DIMM_UNCHECKED;
+
+        status = RamFanSmbusReadWord(RAMFAN_SMBUS_RESOURCE_START,
+                                     kSpdAddrs[i], SPD_CMD_TEMP,
+                                     &raw, &hst);
+        slot->HstSts = hst;
+
+        if (NT_SUCCESS(status)) {
+            ULONG c = RamFanCelsiusFromRaw(raw);
+            if (c > RAMFAN_TEMP_MAX) {
+                /* 越界数据：成功事务但读数不可信 */
+                slot->Status = RAMFAN_DIMM_BAD_DATA;
+                slot->Raw = raw;
+            } else {
+                slot->Status = RAMFAN_DIMM_OK;
+                slot->Raw = raw;
+                slot->Celsius = (UCHAR)c;
+                anySuccess = 1;
+                if (c > maxC) {
+                    maxC = (UCHAR)c;
+                }
+            }
+        } else if (status == STATUS_IO_TIMEOUT ||
+                   status == STATUS_DEVICE_BUSY) {
+            slot->Status = RAMFAN_DIMM_TIMEOUT;
+        } else if (status == STATUS_DATA_ERROR) {
+            /* 0x04 无法区分空槽 NACK 与 CRC/总线异常（LOG 已确认），
+               按不确定数据错误记录，由输出分析判定槽语义 */
+            slot->Status = RAMFAN_DIMM_BUS_ERR;
+        } else {
+            slot->Status = RAMFAN_DIMM_BUS_ERR;
+        }
+        count++;
+    }
+
+    out->Count = count;
+    out->MaxCelsius = maxC;
+    out->AnySuccess = anySuccess;
+    return STATUS_SUCCESS;
+}
+
 
 /* ---- 手动创建控制设备 ---- */
 NTSTATUS
@@ -279,10 +364,29 @@ RamFanEvtIoDeviceControl(WDFQUEUE Queue,
         break;
     }
 
-    case IOCTL_RAMFAN_READ_DIMM_TEMP:
-        /* SMBus 试验未批准：保持阻断 */
-        status = STATUS_DEVICE_NOT_READY;
+    case IOCTL_RAMFAN_READ_DIMM_TEMP: {
+        RAMFAN_READ_DIMM_OUT out = {0};
+
+        if (OutputBufferLength < sizeof(out)) {
+            status = STATUS_BUFFER_TOO_SMALL;
+            break;
+        }
+        status = RamFanReadDimmTemp(&out);
+        if (!NT_SUCCESS(status)) {
+            /* 身份不匹配或不支持：不返回槽数据，也不做部分降速 */
+            break;
+        }
+        status = WdfRequestRetrieveOutputBuffer(Request, sizeof(out),
+                                                 &outBuffer, &outLen);
+        if (!NT_SUCCESS(status)) {
+            break;
+        }
+        RtlCopyMemory(outBuffer, &out, sizeof(out));
+        WdfRequestSetInformation(Request, sizeof(out));
+        status = STATUS_SUCCESS;
         break;
+    }
+
 
     case IOCTL_RAMFAN_FEED_ONCE: {
         RAMFAN_FEED_ONCE_OUT out = {0};

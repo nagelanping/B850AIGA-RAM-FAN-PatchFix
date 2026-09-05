@@ -1,27 +1,28 @@
-# ramfan（Windows 补丁）— 受控非 PnP 身份门禁阶段
+# ramfan（Windows 补丁）— 受控非 PnP 访问（身份门禁 + 受控 SMBus 读取）
 
 把 DIMM 温度持续喂给 NCT6796D 的 `Virtual_TEMP`（SIO 页 `0x0c` reg `0x36`），
 使 `FAN5=MEM_FAN` 在 BIOS 数据源为“内存温度”时按 BIOS 曲线运行。
 
-**当前阶段**（2026-09-05，机主批准受控非 PnP 访问模型，见根目录 `AGENTS.md`“授权边界”）：只读身份门禁。
+**当前阶段**（2026-09-05）：机主批准受控非 PnP 访问模型（`AGENTS.md`“授权边界”）与 §5.2 第 2 步受控 SMBus 读取试验。
 PnP 绑定（upper-filter / function-driver）已在实验 B/C 证伪并删除；驱动不再接收 `EvtDeviceAdd`/translated resources。
 
 - 驱动以普通内核服务加载（`sc create RAMFanPnP type= kernel`），创建非 PnP 控制设备 `\Device\RamFanVirtTemp`。
-- 只实现 `IOCTL_RAMFAN_QUERY_HW`：系统 PnP 枚举确认 PCI `DEV_790B` 存在（读 `Enum\PCI` 注册表，pci.sys 权威枚举）+ NCT chip id（标准 SIO `0x2e/0x2f`）的拒绝式身份门禁。实机证实 `HalGetBusDataByOffset` 在此平台读不到 PCI 配置空间，故不直接扫描 PCI。
-- `READ_DIMM_TEMP`、`FEED_ONCE` 保持阻断：不访问 SMBus 事务寄存器、不写 NCT `0x295/0x296`、不写 page `0x0c`。
-- 服务 `--identity` 只做身份检查；SCM 常驻喂值留到后续阶段（需单独批准）。
+- `IOCTL_RAMFAN_QUERY_HW`（§5.2 第 1 步，已实机验证）：系统 PnP 枚举确认 PCI `DEV_790B` 存在（读 `Enum\PCI` 注册表，pci.sys 权威枚举）+ NCT chip id（标准 SIO `0x2e/0x2f`）。
+- `IOCTL_RAMFAN_READ_DIMM_TEMP`（§5.2 第 2 步，已批准）：受控 SMBus 读取——对白名单基址 `0xb00` 事务寄存器执行 SPD word-read（命令 `0x31`，地址 `0x53/0x52/0x51/0x50`），逐槽记录 Status/Raw/Celsius/HstSts；空槽与失败语义由实验确认，不预判。
+- `FEED_ONCE`（写 NCT）保持阻断，需另一次批准。
+- 服务：`--identity` 只读身份检查；`--dimm` 读取实验；SCM 常驻喂值留到后续阶段。
+
 
 ## 组件
 
 | 组件 | 文件 | 说明 |
 | ---- | ---- | ---- |
-| 内核驱动 | `driver/ramfan.c`、`driver/hw.c`、`driver/identity_model.c` | 非 PnP 控制设备 + 只读身份门禁 |
+| 内核驱动 | `driver/ramfan.c`、`driver/hw.c`、`driver/identity_model.c` | 非 PnP 控制设备；身份门禁 + 受控 SMBus 读取 |
 | 身份判定纯逻辑 | `driver/identity_model.h`、`driver/identity_model.c` | 无 WDF 依赖：chip id 匹配判定，宿主自检使用 |
 | 共享定义 | `driver/ramfan_ioctl.h` | IOCTL、固定目标端口白名单、硬件常量 |
-| 用户态服务 | `service/ramfan-service.c` | `--identity` 只读检查；`--once`/`--install`/`--uninstall` 仍拒绝 |
+| 用户态服务 | `service/ramfan-service.c` | `--identity` 身份检查、`--dimm` 读取实验；`--once`/`--install`/`--uninstall` 仍拒绝 |
 | 构建 | `build.ps1` | 定位 VS/WDK，x64 Debug/Release |
-| 实机验证 | `identity-gate-prep.ps1` | 签名 + 加载驱动 + 运行 `--identity`（机主执行） |
-| 回滚 | `identity-gate-rollback.ps1` | 停止/删除 `RAMFanPnP`、删除驱动文件（机主执行） |
+| 实机加载/验证 | `identity-gate-prep.ps1`、`identity-gate-rollback.ps1` | 签名 + 加载驱动 + 运行检查（机主/受权 agent 执行） |
 | 历史工具 | `experiment-b-prep.ps1`、`experiment-b-rollback.ps1` | 证书/签名/清理通用工具；`experiment-b-logs/` 结果不入库 |
 
 ## 授权边界（四件事分开记录）
@@ -61,7 +62,7 @@ pwsh -NoProfile -File .\test-smbus-model.ps1
 - `test-smbus-model.ps1` 验证 HST 状态分类、温度换算、温度范围和 SPD 地址顺序。
 两个脚本不加载驱动、不打开设备、不访问端口。
 
-## 实机只读身份门禁（机主执行，管理员）
+## 实机验证（管理员；机主或受权 agent 执行）
 
 ```powershell
 pwsh -File .\patch\windows\identity-gate-prep.ps1 -Configuration Release
@@ -71,8 +72,16 @@ pwsh -File .\patch\windows\identity-gate-prep.ps1 -Configuration Release
 以 `/ph` 签名驱动 → 复制到 `%WinDir%\System32\drivers\ramfan.sys` → `sc create RAMFanPnP`
 （type= kernel, demand）→ `sc start` → 运行 `ramfan-service.exe --identity`。
 
-预期结果（日志在 `experiment-b-logs\identity-gate.log`）：
-`QUERY_HW: SMBusBase=0x... ChipId=d802 ControllerFound=1 ChipIdValid=1 HwMatched=1`。
+§5.2 第 1 步身份门禁预期（日志在 `experiment-b-logs\identity-gate.log`）：
+`QUERY_HW: SMBusBase=0x0b00 ChipId=d802 ControllerFound=1 ChipIdValid=1 HwMatched=1`（已实机验证通过）。
+
+§5.2 第 2 步受控 SMBus 读取实验（驱动已加载时）：
+```powershell
+ramfan-service.exe --dimm
+```
+输出 4 槽（0x53/0x52/0x51/0x50）逐槽 Status/Raw/Celsius/HstSts。预期：已装 DIMM（2×16GB，
+预计 0x53/0x52）为 OK 且有温度；空槽呈现 BUS_ERR+HstSts 0x06（无设备，0x04 位）。空槽 NACK 与
+CRC 的区分由实验记录确认，未确认前驱动不预判槽语义。
 
 若身份未通过，检查：
 - `ControllerFound=0`：系统 PnP 枚举中不存在 `VEN_1022&DEV_790B`（非目标机或该控制器被禁用）。
@@ -85,10 +94,11 @@ pwsh -File .\patch\windows\identity-gate-prep.ps1 -Configuration Release
 pwsh -File .\patch\windows\identity-gate-rollback.ps1
 ```
 
+
 ## 下一阶段门槛（暂不执行）
 
-- §5.2 第 2 步受控 SMBus 试验（读 DIMM）：涉及事务寄存器写入，需机主单独批准。
-- 之后才恢复 `FEED_ONCE` 单次写回、动态闭环、常驻服务与失败试验。
+- §5.2 第 3 步单次写回：恢复 `FEED_ONCE`（全读取→校验→最高温→NCT page `0x0c`/reg `0x36` 写回并读回校验），需机主单独批准。
+- 之后才启用动态闭环、0.5s 常驻服务与失败试验。
 - 每次从只读进入写回前，须独立子代理审查与实机证据记录。
 
 ## 已知风险与边界

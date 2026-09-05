@@ -13,7 +13,8 @@ function Get-SmbusStatusClass {
     if (($Status -band $HstStsBusy) -ne 0) { return 'Busy' }
     if (($Status -band $HstStsErr) -ne 0) { return 'Error' }
     if (($Status -band $HstStsOk2) -ne 0) { return 'Success' }
-    return 'Error'
+    # 驱动只把 0x04 判错误、BUSY 优先；0x00（理论上不应出现）返回 Unknown，不冒充失败
+    return 'Unknown'
 }
 
 function Convert-RawTemperature {
@@ -38,8 +39,10 @@ function Assert-Equal {
 Assert-Equal 'Success' (Get-SmbusStatusClass 0x02) 'HST_STS=0x02'
 Assert-Equal 'Success' (Get-SmbusStatusClass 0x12) 'HST_STS=0x12'
 Assert-Equal 'Error' (Get-SmbusStatusClass 0x04) 'HST_STS=0x04'
+Assert-Equal 'Error' (Get-SmbusStatusClass 0x06) '0x06 = 成功位+错误位同置 → 判错误（Linux 实测 0x52/0x50）'
 Assert-Equal 'Busy' (Get-SmbusStatusClass 0x01) 'HST_STS BUSY'
 Assert-Equal 'Busy' (Get-SmbusStatusClass 0x07) 'BUSY 优先于错误位'
+Assert-Equal 'Unknown' (Get-SmbusStatusClass 0x00) '0x00 -> Unknown（不冒充失败）'
 Assert-Equal 0 (Convert-RawTemperature 0) 'raw=0 -> 0°C'
 if (-not (Test-ValidTemperature 0)) {
     throw '0°C 应为有效温度'

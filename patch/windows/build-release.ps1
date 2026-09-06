@@ -8,9 +8,13 @@
 #   patch/windows/service/x64/Release/ramfan-service.exe
 #   测试证书 RAMFanTestSign 已在本机（experiment-b-prep.ps1 创建过）。
 #
-# 产物：release/windows/（该目录 gitignore，不入库）——平铺：
-#   ramfan.sys / ramfan-service.exe / install.ps1 / uninstall.ps1 /
-#   INSTALL.md / RAMFanTestSign.cer
+# 产物：
+#   release/windows/（gitignore，不入库）— 平铺：
+#     ramfan.sys（测试签名 /ph）、ramfan-service.exe（签名）、
+#     install.ps1、uninstall.ps1、INSTALL.md、RAMFanTestSign.cer、
+#     README.md（总说明，取自仓库根）、LICENSE（MIT，取自仓库根）
+# 签名对象是发布副本，Release 源保持未签，重跑不累积签名。
+# 压缩由发布者手动完成（7z），包内容即本目录全部文件。
 #
 # 用法：pwsh -NoProfile -File .\patch\windows\build-release.ps1
 
@@ -49,29 +53,48 @@ if (-not (Test-Path $svc)) { Fail "未找到服务: $svc（先运行 build.ps1 -
 # ---- 3. 输出目录 ----
 New-Item -ItemType Directory -Path $outDir -Force | Out-Null
 
-# ---- 4. 签名（内核驱动需 /ph 页哈希，实测缺 /ph 报错 577）----
-Write-Host ''
-Write-Host '签名 ramfan.sys（/ph）...'
-& $signtool.FullName sign /v /fd sha256 /ph /sm /s My /n $certName $sys 2>&1 | ForEach-Object { "  $_" }
-if ($LASTEXITCODE -ne 0) { Fail "驱动签名失败 (exit $LASTEXITCODE)" }
-Write-Host '签名 ramfan-service.exe ...'
-& $signtool.FullName sign /v /fd sha256 /sm /s My /n $certName $svc 2>&1 | ForEach-Object { "  $_" }
-if ($LASTEXITCODE -ne 0) { Fail "服务签名失败 (exit $LASTEXITCODE)" }
-
-# ---- 5. 组装（复制到发布目录；签名后的 .sys 复制自 Release 产物路径）----
-$signedSys = $sys      # signtool 原位签名 Release 产物，直接复制即可
-Copy-Item $signedSys (Join-Path $outDir 'ramfan.sys') -Force
+# ---- 4. 组装到发布目录（源保持未签，副本在此签名，重跑不累积签名）----
+Copy-Item $sys (Join-Path $outDir 'ramfan.sys') -Force
 Copy-Item $svc (Join-Path $outDir 'ramfan-service.exe') -Force
 foreach ($f in 'install.ps1', 'uninstall.ps1', 'INSTALL.md', 'RAMFanTestSign.cer') {
     $src = Join-Path $patchDir $f
     if (-not (Test-Path $src)) { Fail "缺少分发文件 $src" }
     Copy-Item $src (Join-Path $outDir $f) -Force
 }
+foreach ($f in 'README.md', 'LICENSE') {
+    $src = Join-Path $repoRoot $f
+    if (-not (Test-Path $src)) { Fail "缺少包内总文档 $src（需先在仓库根存在）" }
+    Copy-Item $src (Join-Path $outDir $f) -Force
+}
 
+# ---- 5. 签名发布副本（内核驱动需 /ph 页哈希，实测缺 /ph 报错 577）----
 Write-Host ''
-Write-Host '=== 发布包已生成 ===' -ForegroundColor Green
+Write-Host '签名 ramfan.sys（/ph）...'
+$outSys = Join-Path $outDir 'ramfan.sys'
+& $signtool.FullName sign /v /fd sha256 /ph /sm /s My /n $certName $outSys 2>&1 | ForEach-Object { "  $_" }
+if ($LASTEXITCODE -ne 0) { Fail "驱动签名失败 (exit $LASTEXITCODE)" }
+Write-Host '签名 ramfan-service.exe ...'
+$outSvc = Join-Path $outDir 'ramfan-service.exe'
+& $signtool.FullName sign /v /fd sha256 /sm /s My /n $certName $outSvc 2>&1 | ForEach-Object { "  $_" }
+if ($LASTEXITCODE -ne 0) { Fail "服务签名失败 (exit $LASTEXITCODE)" }
+
+# ---- 6. 签名验证 ----
+Write-Host ''
+Write-Host '签名验证（驱动）：'
+& $signtool.FullName verify /pa $outSys 2>&1 | Select-Object -Last 2
+Write-Host '签名验证（服务）：'
+& $signtool.FullName verify /pa $outSvc 2>&1 | Select-Object -Last 2
+
+# ---- 7. 输出发布内容清单（发布者手动压为 7z 后上传 GitHub release）----
+Write-Host ''
+Write-Host '=== 发布目录已生成（签名完成，未压缩） ===' -ForegroundColor Green
 Write-Host "目录：$outDir"
-Get-ChildItem $outDir | Select-Object Name, Length
 Write-Host ''
-Write-Host '签名验证：'
-& $signtool.FullName verify /pa (Join-Path $outDir 'ramfan.sys') 2>&1 | Select-Object -Last 2
+Write-Host '包内容（将以下全部文件压为 7z，建议命名）：'
+Write-Host '  B850AIGA-RAM-FAN-PatchFix_Windows_TestSign.7z'
+Get-ChildItem $outDir | Select-Object Name, Length | ForEach-Object {
+    Write-Host ("    {0,-24} {1,8} B" -f $_.Name, $_.Length)
+}
+Write-Host ''
+Write-Host '手动压缩命令参考（7-Zip 在 PATH 时）：'
+Write-Host "  7z a -t7z '$repoRoot\release\B850AIGA-RAM-FAN-PatchFix_Windows_TestSign.7z' '$outDir\*'"

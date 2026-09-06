@@ -1,9 +1,9 @@
-/* ramfan-service.c — B850AIGA RAM-FAN Virtual_TEMP 补丁服务（受控试验，常驻喂值阶段）
+/* ramfan-service.c — B850AIGA RAM-FAN Virtual_TEMP 补丁服务（测试签名公测版；常驻喂值 + 开机自启）
  *
  *   - --identity：只读身份门禁检查（QUERY_HW，不访问 SMBus、不写 NCT）
  *   - --dimm：受控 SMBus 读取实验（READ_DIMM_TEMP，读全部候选槽并打印状态；不写 NCT）
  *   - --once：单次写回（FEED_ONCE：读→校验→最高温→NCT Virtual_TEMP 写回）
- *   - --install / --uninstall：SCM 安装（开发测试 DEMAND_START；验收后才自动启动）
+ *   - --install / --uninstall：SCM 安装（公测版 AUTO_START 开机自启，依赖 RAMFanPnP）
  *   - 默认 SCM 模式：启动时身份门禁检查，随后 0.5s 周期 FEED_ONCE 循环；
  *     连续失败有限退避；停止信号退出循环（不清除 NCT 值）
  *
@@ -26,7 +26,7 @@
 static SERVICE_STATUS         g_Status;
 static SERVICE_STATUS_HANDLE  g_StatusHandle = NULL;
 static HANDLE                 g_StopEvent = NULL;
-/* SCM 服务安装/卸载已批准（常驻阶段 2026-09-05）；用 DEMAND_START 安装，验收后才改自动启动 */
+/* SCM 服务安装/卸载已批准（常驻阶段 2026-09-05）；公测版 AUTO_START 开机自启（2026-09-06） */
 /* ---- 日志（服务模式写文件；--once 同时输出 stdout） ---- */
 static void
 LogMessage(const char *fmt, ...)
@@ -414,6 +414,7 @@ InstallService(void)
     SC_HANDLE scm, svc;
     WCHAR path[MAX_PATH];
     SERVICE_DESCRIPTION desc;
+    WCHAR depend[64];   /* 依赖 RAMFanPnP 内核服务，保证开机顺序 */
 
     GetModuleFileNameW(NULL, path, MAX_PATH);
     scm = OpenSCManagerW(NULL, NULL, SC_MANAGER_ALL_ACCESS);
@@ -421,13 +422,15 @@ InstallService(void)
         printf("OpenSCManager 失败 GLE=%lu（需要管理员）\n", GetLastError());
         return 1;
     }
+    wcscpy_s(depend, _countof(depend), L"RAMFanPnP");
+    depend[wcslen(depend) + 1] = L'\0';   /* SCM 依赖列表：双 null 结尾 */
     svc = CreateServiceW(scm, RAMFAN_SERVICE_NAME,
                          L"RAMFan VirtualTEMP Feeder",
                          SERVICE_ALL_ACCESS,
                          SERVICE_WIN32_OWN_PROCESS,
-                         SERVICE_DEMAND_START,   /* 开发测试；验收后才改自动 */
+                         SERVICE_AUTO_START,   /* 公测版开机自启（机主 2026-09-06 定案） */
                          SERVICE_ERROR_NORMAL,
-                         path, NULL, NULL, NULL, NULL, NULL);
+                         path, NULL, NULL, depend, NULL, NULL);
     if (svc == NULL && GetLastError() != ERROR_SERVICE_EXISTS) {
         printf("CreateService 失败 GLE=%lu\n", GetLastError());
         CloseServiceHandle(scm);
@@ -443,11 +446,11 @@ InstallService(void)
         }
     }
     desc.lpDescription =
-        (LPWSTR)L"RAMFan VirtualTEMP Feeder（受控试验；常驻 0.5s 喂值，DEMAND_START）";
+        (LPWSTR)L"RAMFan VirtualTEMP Feeder（常驻 0.5s 喂值，AUTO_START 开机自启）";
     ChangeServiceConfig2W(svc, SERVICE_CONFIG_DESCRIPTION, &desc);
     CloseServiceHandle(svc);
     CloseServiceHandle(scm);
-    printf("服务已安装（DEMAND_START）。启动：sc start RAMFan\n");
+    printf("服务已安装（AUTO_START，依赖 RAMFanPnP）。开机自启，也可 sc start RAMFan 立即启动\n");
     return 0;
 }
 

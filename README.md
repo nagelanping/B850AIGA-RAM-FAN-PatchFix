@@ -1,85 +1,49 @@
 # MS-iCraft B850 AIGA 内存风扇曲线修复
 
-这个项目修复 MAXSUN MS-iCraft B850 AIGA / 铭瑄 B850 瑷珈 主板上的一个固件问题：重启后，`FAN5=MEM_FAN` 的内存风扇曲线不再跟随内存温度。
-Linux 版本补丁已完成，Windows 版本正在开发中。
+修复 MAXSUN MS-iCraft B850 AIGA / 铭瑄 B850 瑷珈 主板固件 Bug：系统重启后，`FAN5=MEM_FAN` 内存风扇转速曲线失效 / 不再跟随内存温度。
 
-普通用户请直接使用 release 中的发布包。安装步骤见 `install.md`。
+Linux 版本为已实机验证的正式版。Windows 版本为**测试签名**版，提供一键安装脚本与开机自启。发布包见本仓库 Releases 页面。
 
-## 适用范围
+## 问题根因
 
-已在以下硬件和 Linux 环境完成实机验证：
+BIOS 将内存风扇温度源配置为 NCT6796D 的 `Virtual_TEMP`。该通道没有硬件数据，固件只在 BIOS 打开内存风扇曲线页面时写入温度，重启后停止写入，风扇回到低转速。
 
-- 主板：MAXSUN MS-iCraft B850 AIGA；
-- 风扇接口：`FAN5=MEM_FAN`；
-- 风扇温度源：BIOS 中的“内存温度”；
-- 内存温度设备：内核 `spd5118` hwmon；
-- NCT 芯片：实测兼容 NCT6796D-S/NCT6799D；
-- 系统：Linux，使用 systemd。
+本补丁持续读取 DIMM 温度并写入 NCT `Virtual_TEMP`，让内存风扇按 BIOS 中原有曲线运行。不修改风扇曲线、温度源、BIOS 或固件。
 
-其他主板、其他 NCT 型号或没有 `spd5118` hwmon 的系统不在已验证范围内。
+## 下载与安装
 
-## 修复内容
+从本仓库 GitHub Releases 页面下载对应平台的发布包：
 
-BIOS 将内存风扇的温度源配置为 NCT6796D 的 `Virtual_TEMP`。这个通道没有硬件温度数据，固件只在 BIOS 打开内存风扇曲线页面时写入温度。系统重启后停止写入，风扇会回到低档。
+| 平台    | 发布包                                            | 说明                                                       |
+| ------- | ------------------------------------------------- | ---------------------------------------------------------- |
+| Linux   | `B850AIGA-RAM-FAN-PatchFix_Linux.tar.gz`        | 正式版，需`spd5118` hwmon                                |
+| Windows | `B850AIGA-RAM-FAN-PatchFix_Windows_TestSign.7z` | 测试签名，非正式签名；随包脚本一键配置环境并安装 |
 
-Linux 服务每 0.5 秒读取内核提供的 DIMM 温度，取所有有效读数中的最高值，然后写入 `Virtual_TEMP`。BIOS 中的风扇曲线、温度源、模式和其他风扇设置不会被修改。
+解压后，按包内 `INSTALL.md` 安装。
 
-服务只执行以下操作：
+### Windows 说明
 
-```text
-读取 spd5118 hwmon 温度
-        ↓
-取最高有效 DIMM 温度
-        ↓
-写入 NCT Virtual_TEMP（页 0x0c、寄存器 0x36）
-        ↓
-FAN5 按原有 BIOS 曲线运行
-```
+该版本使用自签测试证书。安装脚本 `install.ps1` 会**自动开启 testsigning、关闭内存完整性、导入测试证书**；需要重启时脚本会提示，重启后再次运行即完成安装。**Secure Boot 需在 BIOS/UEFI 手动关闭**（脚本无法改），脚本检测到开启会提示。
 
-## 当前状态
+关闭 Secure Boot 与内存完整性会降低系统安全姿态，请知悉风险后自行决定是否安装。卸载可用 `uninstall.ps1`；需要还原安全设置时加 `-RestoreSecurity`。
 
-Linux 版本是已实机验证的版本：
+**测试模式水印**：testsigning 开启期间，桌面右下角会显示“测试模式”水印，这是 Windows 对测试签名系统的标识，属预期现象。水印随 testsigning 关闭而消失（关闭 testsigning 后本补丁驱动无法再加载，等价于卸载还原）。本补丁不提供隐藏水印的工具——隐藏需修改系统 UI 组件，不属补丁职责，也不推荐使用第三方水印隐藏工具。
 
-- 单次读取、写入和风扇响应已验证；
-- systemd 常驻服务已验证；
-- `ProtectSystem=strict` 下的服务访问已验证；
-- 与 `nct6775` 同时运行时，短时观察未发现风扇读数毛刺。
+## 验证
 
-NCT 的页选择、寄存器选择和数据写入由多个 `/dev/port` 操作组成，无法与 `nct6775` 内核访问原子协调。短时测试未复现问题，但该理论竞态仍然存在，实际不影响使用。
+- Linux：安装见包内 `INSTALL.md`；停止服务用 systemd。
+- Windows：安装脚本完成即启动喂值服务 `RAMFan`；单次自检用 `ramfan-service.exe --once`，成功返回 0。
 
-## 安装
+已知边界：服务停止不清除最后一次写入的 `Virtual_TEMP` 值，该值保持到 NCT 复位或系统重启。连续读取失败时保持旧值；长时间失败使旧值过期，该行为不是完整 fail-safe。
 
-1. 获取 release 发布包并解压；
-2. 按 `INSTALL.md` 执行安装。
+## 已验证范围
 
-服务需要 root 权限访问 `/dev/port`。安装前不要修改 BIOS 风扇曲线或温度源。
+- 主板：MAXSUN MS-iCraft B850 AIGA（Linux 实机）；Windows 目标机同型号，含 PCI `VEN_1022&DEV_790B` FCH SMBus、NCT chip id `0xd802`。
+- 温度源：Linux 内核 `spd5118` hwmon；Windows FCH SMBus SPD word-read。
+- NCT 芯片：实测兼容 NCT6796D-S / NCT6799D 系列。
 
-## 停止和卸载
-
-```bash
-sudo systemctl disable --now ram-fan-virtual-temp.service
-sudo rm -f /etc/systemd/system/ram-fan-virtual-temp.service
-sudo rm -f /usr/local/sbin/ram-fan-virtual-temp
-sudo systemctl daemon-reload
-```
-
-停止服务不会清除最后一次写入的 `Virtual_TEMP` 值。这个值通常保持到 NCT 复位或系统重启。
-
-## 发布包文件
-
-```text
-B850AIGA-RAM-FAN-PatchFix_Linux.tar.gz
-├── ram-fan-virtual-temp          # Linux x86_64 成品二进制
-├── ram-fan-virtual-temp.service  # systemd 服务模板
-├── README.md                     # 用户说明
-├── INSTALL.md                    # 安装、更新、验证和卸载
-└── LICENSE                       # MIT License
-```
-
-## 源码和记录
-
-源码位于 `patch/linux/`。硬件实验、逆向资料和限制记录在 `./LOG.md` 及 `archive/` 下。
+其他主板、其他 NCT 型号或缺少上述温度源的系统不在已验证范围。
 
 ## 许可证
 
-本项目使用 MIT License。
+MIT License。分发需保留版权。

@@ -5,12 +5,20 @@
 #   - 内核驱动一旦加载，sc stop 可能返回 1052、ramfan.sys 被占用无法删除，
 #     只能靠重启释放；服务项删除后重启不会自动再加载，无残留风险。
 #   - 卸载不清除 NCT 最后写入的 Virtual_TEMP 值（保留到 NCT 复位/系统重启）。
-#   - 不还原 Secure Boot / testsigning / 内存完整性设置（由用户自行决定还原）。
+#   - 还原安全设置：默认只打印命令，不自动改。加 -RestoreSecurity 则自动还原
+#     testsigning 与内存完整性（脚本安装时自动开启/关闭的项），需重启生效；
+#     测试证书删除有风险（其他测试驱动可能共用），仅打印命令由你决定。
 #
-# 用法（普通权限即可，自动请求 UAC）：pwsh -ExecutionPolicy Bypass -File .\uninstall.ps1
-
+# 用法（普通权限即可，自动请求 UAC）：
+#   powershell -NoProfile -ExecutionPolicy Bypass -File .\uninstall.ps1
+#   powershell -NoProfile -ExecutionPolicy Bypass -File .\uninstall.ps1 -RestoreSecurity
+#   pwsh -NoProfile -ExecutionPolicy Bypass -File .\uninstall.ps1   # PS7
+#
 [CmdletBinding()]
-param()
+param(
+    # 还原脚本安装时自动改的安全设置（testsigning/内存完整性），需重启生效
+    [switch]$RestoreSecurity
+)
 $ErrorActionPreference = 'Stop'
 
 function Fail([string]$msg) {
@@ -31,6 +39,7 @@ if (-not $isAdmin) {
     }
     Write-Host '需要管理员权限，正在请求提升（UAC）...'
     $args2 = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"")
+    if ($RestoreSecurity) { $args2 += '-RestoreSecurity' }
     try {
         $p = Start-Process -FilePath $hostExe -ArgumentList $args2 -Verb RunAs -Wait -PassThru
     } catch {
@@ -95,9 +104,28 @@ if (Test-Path $dstSys) {
     }
 }
 
-Write-Host ''
-Write-Host '=== 卸载完成 ==='
-Write-Host '如需彻底还原开发环境（可选，自行决定）：'
-Write-Host '  bcdedit /deletevalue testsigning   # 关闭 testsigning（需重启）'
-Write-Host '  BIOS/UEFI 中重新开启 Secure Boot'
-Write-Host '  Windows 安全中心重新开启内存完整性'
+if ($RestoreSecurity) {
+    Write-Host ''
+    Write-Host '还原脚本自动修改的安全设置 ...' -ForegroundColor Yellow
+    Write-Host '  关闭 testsigning（bcdedit /deletevalue testsigning）...'
+    & "$env:WINDIR\System32\bcdedit.exe" /deletevalue testsigning 2>&1 | ForEach-Object { Write-Host "    $_" }
+    $dgKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard'
+    New-Item -Path $dgKey -Force | Out-Null
+    New-ItemProperty -Path $dgKey -Name 'EnableVirtualizationBasedSecurity' -PropertyType DWord -Value 1 -Force | Out-Null
+    $scKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity'
+    New-Item -Path $scKey -Force | Out-Null
+    New-ItemProperty -Path $scKey -Name 'Enabled' -PropertyType DWord -Value 1 -Force | Out-Null
+    Write-Host '  已配置内存完整性重新启用（等同 Windows 安全中心界面开启）。'
+    Write-Host ''
+    Write-Host '=== 安全设置已还原，需重启生效 ===' -ForegroundColor Green
+    Write-Host 'Secure Boot：安装要求你手动关闭过，请自行回 BIOS 重新开启（本脚本不碰 BIOS）。'
+    Write-Host '测试证书 RAMFanTestSign（可选删除，其他测试驱动可能共用）：'
+    Write-Host '  Get-ChildItem Cert:\LocalMachine\Root, Cert:\LocalMachine\TrustedPublisher |'
+    Write-Host "    Where-Object { \$_.Subject -like '*RAMFanTestSign*' } | Remove-Item"
+} else {
+    Write-Host ''
+    Write-Host '=== 卸载完成 ==='
+    Write-Host '如需还原安装时自动修改的安全设置，加 -RestoreSecurity 重跑本脚本（需重启生效）：'
+    Write-Host '  powershell -NoProfile -ExecutionPolicy Bypass -File .\uninstall.ps1 -RestoreSecurity'
+    Write-Host 'Secure Boot：若你手动关闭过，请自行回 BIOS 重新开启。'
+}

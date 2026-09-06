@@ -2,11 +2,12 @@
 
 ## 当前状态
 
-- **Linux 0.1 已归档**：实现和完整 Linux 工作记录位于 `archive/0.1/linux/`；发布包仍在 `release/linux/`。
-- **当前工作目标**：实现 Windows KMDF 内核驱动 + Windows Service，持续向 NCT `Virtual_TEMP` 喂入 DIMM 温度。
-- **当前阶段**：Windows 常驻喂值闭环成立并经受压测（45-46°C 稳定写回一致，commit `4b8466e`）。方案 B（每轮全读 4 槽 + 1..120°C 温度屏蔽 + 单槽瞬时垃圾同轮重试 + 身份门禁 60s 缓存心跳）为当前语义，`ae32c06` 前的 InstalledMask 映射状态机已删除。最终子代理审查：无 S1，可发布受控测试版。测试签名版已就绪可交付机主自验动态温升联动；正式发布仍待可信签名。
-## 根因与目标链路
+- **Linux 0.1 已归档**：实现和完整 Linux 工作记录位于 `archive/0.1/linux/`；成品以 `B850AIGA-RAM-FAN-PatchFix_Linux.tar.gz` 形式分发（GitHub release）。
+- **当前工作目标**：实现 Windows KMDF 内核驱动 + Windows Service，持续向 NCT `Virtual_TEMP` 喂入 DIMM 温度；公测版已组装待发布，机主实机自验。
+- **当前阶段**：Windows 常驻喂值闭环成立并经受压测（45-46°C 稳定写回一致，commit `4b8466e`）。方案 B（每轮全读 4 槽 + 1..120°C 温度屏蔽 + 单槽瞬时垃圾同轮重试 + 身份门禁 60s 缓存心跳）为当前语义，`ae32c06` 前的 InstalledMask 映射状态机已删除。最终子代理审查：无 S1，可发布受控测试版。
+- **分发就绪**（2026-09-06）：`install.ps1`/`uninstall.ps1`/`INSTALL.md`（PS 5.1 兼容，经子代理审查修复）与 `build-release.ps1` 已提交；发布目录已组装于 `release/windows/`（gitignore 不入库），含根 README/LICENSE；压缩由发布者手动完成（7z）。文档已按 anti-ai-vibes 中性写作规范重写维护。
 
+## 根因与目标链路
 
 BIOS 将 `FAN5=MEM_FAN` 的温度源设置为 NCT6796D `Virtual_TEMP`（source `0x0a`）。该通道没有硬件数据，固件仅在 BIOS 打开内存风扇曲线页面时持续喂值；重启后 DXE/Setup 不再运行，温度值被清除，风扇回到约 941 rpm。
 
@@ -69,18 +70,20 @@ outb((v & 0xf0) | page, 0x296)
 
 - 采用 **KMDF 驱动 + Windows Service**，不把 WinRing0、InpOut32 等第三方驱动作为正式依赖。
 - 驱动内部完成端口 I/O、SMBus 事务、温度换算和 NCT 写回；服务只调用最小的 `IOCTL_RAM_FAN_FEED_ONCE`，不暴露裸端口操作。
-- 驱动首轮必须从 Windows PCI/FCH 资源确认 SMBus 基址，不能只硬编码 `0xb00`；同时检查 FCH 控制器和 NCT chip id，硬件不匹配则拒绝工作。
+- 驱动用系统 PnP 枚举（`Enum\PCI` 注册表）确认 FCH 控制器 `DEV_790B` 存在，并用标准 SIO `0x2e/0x2f` 读 NCT chip id；硬件不匹配则拒绝工作。SMBus 事务基址为固定白名单 `0xb00`（`HwMatched` 不要求 SMBus BAR 等于 `0xb00`）。
 - 测试签名、Secure Boot、驱动安装和回滚是 Windows 交付边界；测试版本不得伪装为正式签名发布。
 
 ## Windows 待办
 
 1. ✅ 记录 Windows 环境（见下方 2026-09-04 Windows 环境记录）。
-2. ✅ 准备 VS + SDK + WDK（VS 2026 Community 18.9 / SDK 10.0.26100 已装；WDK 10.0.26100 安装中）；阶段 1 工程已建。
-3. ✅ 阶段 1 代码：驱动加载/卸载、硬件识别、设备句柄、只读 SMBus IOCTL；待构建与实机验证（禁止写 NCT）。
-4. ✅ 2026-09-05：机主批准受控非 PnP 模型；驱动重构为非 PnP 控制设备 + 只读身份门禁（§5.2 第 1 步），已构建、纯逻辑自检与子代理审查通过，见 LOG 末尾 2026-09-05 条目。
-5. ✅ 2026-09-05：身份门禁实机验证通过（`HwMatched=1`），结果见 LOG 末尾；回滚完成。
-6. ✅ 2026-09-05：机主批准 §5.2 第 2 步受控 SMBus 试验；`READ_DIMM_TEMP` 已实现并通过构建/自检/子代理审查，待实机运行（`--dimm`）确认空槽与失败语义，结果写回 LOG。
-7. 写回（`FEED_ONCE`）与常驻服务（阶段 3/4）：逐级批准 + 独立审查 + 实机证据后恢复。
+2. ✅ 准备 VS + SDK + WDK（VS 2026 Community 18.9 / SDK 10.0.26100；阶段 1 工程已建并持续构建）。
+3. ✅ 阶段 1 代码：驱动加载/卸载、硬件识别、设备句柄、只读 SMBus IOCTL，已构建并实机验证。
+4. ✅ 2026-09-05：机主批准受控非 PnP 模型；驱动重构为非 PnP 控制设备 + 只读身份门禁（§5.2 第 1 步），实机验证 `HwMatched=1`。
+5. ✅ 2026-09-05：受控 SMBus 读取（§5.2 第 2 步）、单次写回 FEED_ONCE（第 3 步）、常驻喂值阶段均逐级获批并实机验证（见下方日期条目）。
+6. ✅ 2026-09-06：压测假失败根治（方案 B + 单槽重试 + 门禁缓存，commit `4b8466e`）；最终子代理审查无 S1。
+7. ✅ 2026-09-06：分发脚本与发布打包（`install.ps1`/`uninstall.ps1`/`INSTALL.md`/`build-release.ps1`），发布目录已组装（手动 7z）。
+8. ⬜ 机主自验公测版：一键安装（含自动配置与重启续装）→ 动态温升联动 → 睡眠/重启自动恢复（AUTO_START）→ 卸载与 `-RestoreSecurity` 还原。
+9. ⬜ 自验通过后对外分发公测版（测试签名形态，无官方认证计划）。
 
 ## 风险与禁止事项
 
@@ -127,13 +130,11 @@ outb((v & 0xf0) | page, 0x296)
 - 已在 `WORKFLOW.md` 补充阻塞前置：驱动 PnP/resource model、空槽 NACK 与已安装 DIMM 故障的区分、SMBus 超时清理、NCT 页恢复、外部并发限制及正式签名门槛。
 - 旧值保持策略仍不写未经验证的安全温度；连续失败导致旧值过期属于明确热安全风险，须在目标机测试和发布说明中保留。
 
-
 ## 2026-09-04 AGENTS.md 双系统维护
 
 - 根目录 `AGENTS.md` 已从单一混合约束维护为 Linux / Windows 两部分：Linux 维护边界、Windows KMDF + Service 开发边界、阶段门槛、实机权限和共享硬件访问风险。
 - 保留既有项目规则和关键硬件事实，未按归档 `LOG.md` 的方式删减历史；Linux 归档继续保留完整记录。
 - 子代理轻量审查通过：未发现与 `WORKFLOW.md` 或已确认硬件事实冲突；已同步温度范围、DIMM 地址映射/失败语义、Linux 部分验收状态和 Windows 服务启动策略。
-
 
 ## 2026-09-04 Windows 阶段 2草稿与独立审查
 
@@ -178,17 +179,20 @@ outb((v & 0xf0) | page, 0x296)
 - 默认 SCM 服务模式仍保留阶段 2只读检查路径，会打开设备并调用只读 IOCTL；当前 `--once`、服务安装/卸载入口不会连接设备或修改 SCM。
 - 本轮修改后再次执行 `pwsh -File patch/windows/build.ps1 -Configuration Debug` 和 `Release`，驱动与服务均成功构建；构建脚本不再复制 `.inf.disabled`，并会删除对应配置输出目录中的旧 `ramfan.inf`。本轮 Debug/Release 输出目录已清理。
 - 下一步先修正上述软件架构和安装包问题，再安排只读 PnP 加载验证；在此之前不需要机主执行新的实机指令。
+
 ## 2026-09-05 Windows 资源生命周期收敛
 
 - PnP 上下文现在拒绝目标范围的重复或部分重叠 port descriptor；只允许唯一、完整覆盖的目标资源进入角色识别。
 - 全局状态保存 SMBus/NCT/SIO 的固定资源快照，并对登记 owner 持有配对的 `WDFDEVICE` 引用；Prepare/Release 的登记与注销均受 wait-lock 保护。
 - 角色冲突会将对应 Ready 状态置为不可用，同时保留原 owner 的引用直到其 `ReleaseHardware` 配对释放；冲突在本次驱动生命周期内保持 sticky。
 - 以上状态仍未接入硬件访问；`FEED_ONCE`、`QUERY_HW`、`READ_DIMM_TEMP` 继续阻断，未安装、未访问真实端口。
+
 ## 2026-09-05 PnP 绑定边界结论
 
 - Microsoft INF Models section 按 hardware ID/compatible ID 匹配；当前 `ACPI\PNP0C02` 通用 hardware ID 项不能仅凭 INF 区分实机实例 `\700` 与 `\0`。
 - 因此 `ramfan.inf.disabled` 继续保持不可安装状态；不能把当前通用 hardware ID upper-filter 当作目标机安装包，也不能仅通过拆分 INF 文件宣称实现精确实例绑定。
 - 后续若继续采用 PNP0C02 upper-filter，必须在驱动运行时同时按实例 ID 和 translated resources 做拒绝式筛选，并完成 filter 栈、catalog、签名、DriverStore 安装和回滚验证后才可解除安装门禁。
+
 ## 2026-09-05 控制设备资源快照协议
 
 - 已实现 active-user/rundown 生命周期门：控制设备队列显式设置为 `WdfExecutionLevelPassive`；硬件事务开始时在全局 wait-lock 下检查 Ready/冲突/Removing 并递增活动计数，结束时递减并在归零时发信号。
@@ -206,6 +210,7 @@ outb((v & 0xf0) | page, 0x296)
 - 新增 `patch/windows/test-resource-model.ps1` 及 `test-resource-model.c`，测试驱动实际调用的资源分类和事务门禁，覆盖完整/部分/重复资源、角色分离、已知 `0x0200-0x023f` 范围、`UINT64` 地址边界，以及 Begin → 一侧释放 → 新 Begin 拒绝 → End 的活动用户时序；不加载驱动、不打开设备、不访问端口。
 - 验证通过：`test-smbus-model.ps1`、`test-resource-model.ps1`，以及驱动/服务 x64 Debug、Release 构建。INF 仍为 `.inf.disabled`，安装/卸载脚本仍拒绝执行，`FEED_ONCE` 仍返回 `RAMFAN_FEED_HW_UNAVAILABLE`。
 - 未解决阻塞：PNP0C02 upper-filter 的精确绑定、translated resource 与独占访问的关系、标准 SIO `0x2e/0x2f` 的合法资源授权、catalog/签名/回滚；因此不安排机主安装或真实端口测试。
+
 ## 2026-09-05 资源绑定路径决策与角色规则修正（仍无实机安装）
 
 - 独立规划子代理结合实机证据给出决策：**绑定主路径 (a)** 通用 `ACPI\PNP0C02` INF upper-filter + 运行时按实例 ID 允许表与资源分类双门禁；(b) SetupAPI `SPDRP_UPPERFILTERS` per-device 只绑 `\700`/`\0` 作为 (a) 实机证伪后的备选。PCI 790B upper-filter、替换功能驱动、非 PnP 自声明端口均排除。
@@ -215,6 +220,7 @@ outb((v & 0xf0) | page, 0x296)
 - 关键未解疑点：实机 `PNP0C02\0` 状态为 PnP Stopped/查询 OK，upper-filter 只有在该节点被带动 start 时才会收到 `EvtDevicePrepareHardware`；若无法启动则 NCT 授权路径失效。translated resource 只证明该 devnode 获得该范围，不等于独占授权，不证明功能驱动/固件不访问。
 - 决策子代理建议：本会话只做上述纯逻辑修正并保持门禁；下一步先由机主执行只读清单 A（全系统 PNP0C02 计数、两节点 `/resources` `/problem`、Service/UpperFilters/LowerFilters/ConfigFlags 注册表、790B 驱动名），再视批准执行可逆加载实验 B（测试签名 + `pnputil /add-driver /install` + 逐节点 restart/enable + 只读 IOCTL + 回滚要点）。失效条件：任何非目标 PNP0C02 挂 filter 后新增 problem、目标节点 start 失败且 restart/enable 无法恢复、重启后 translated list 不含目标范围、SetupAPI 写 UpperFilters 被拒或重启后丢失，或只读探测发现 HST 被独占/不稳定——任一出现即记录并触发 WORKFLOW.md §7 转向，不静默继续。
 - 门禁状态不变：`FEED_ONCE` 仍返回 `RAMFAN_FEED_HW_UNAVAILABLE`，INF 维持 `.inf.disabled`，install/uninstall 脚本仍拒绝，未安装驱动、未访问端口、未写 NCT。
+
 ## 2026-09-05 目标机清单 A 只读结果（本机即目标机）
 
 - 机主确认本会话所在机器即目标机：Windows 11 专业工作站版 10.0.26200 x64，管理员权限；`PCI\VEN_1022&DEV_790B&SUBSYS_07606688&REV_71\3&11583659&0&A0`（AMD SMBUS）状态 OK。
@@ -223,29 +229,34 @@ outb((v & 0xf0) | page, 0x296)
 - `ACPI\PNP0C02\0` IO 资源仅 `0x290-0x29f` 与 `0x200-0x23f`。其余实例 `\14`（内存 `0x860000000-0x87fffffff`）、`\15`（`0xfff80000-0xffffffff`）无 IO 目标范围，`\8B`、`\8C` 无资源列出。目标范围无跨实例重复声明。
 - System 类无类级 UpperFilters；Secure Boot False；testsigning 未开启；无 HWiNFO/OpenHardwareMonitor/AIDA 等进程在跑。790B 驱动名沿用 2026-09-04 记录（oem14.inf）。
 - pnputil `/resources` 对两个目标实例打印 `Status: Stopped`，而 Get-PnpDevice 显示 OK：PNP0C02 由 machine.inf 提供、Enum 键无 Service 值，设备栈实际启动语义与“upper-filter 收到 PrepareHardware”是否成立仍待实验 B 验证。
+
 ## 2026-09-05 实验 B 准备完成（等待重启验证）
 
 - 机主批准完整实验 B（含重启）。已新增脚本：`experiment-b-prep.ps1`（证书+签名+testsigning）、`experiment-b-verify.ps1`（重启后安装+restart 节点+QUERY_RESOURCE 验证）、`experiment-b-rollback.ps1`（卸载/清 UpperFilters/删服务/关 testsigning）。产物与日志在 `patch/windows/experiment-b-logs/`（已 gitignore，不入库）。
 - prep 已完成：创建并信任测试证书 `RAMFanTestSign`（Machine My/Root/TrustedPublisher）；从 `ramfan.inf.disabled` 生成含 `CatalogFile=ramfan.cat`、DriverVer 09/05/2026 的可安装 INF；Inf2Cat 生成 catalog（signability 无错误）；用 `/sm /s My` 对 catalog 与 `ramfan.sys` 签名成功；`bcdedit /set testsigning on` 已生效（Secure Boot False）。
 - 驱动额外提供只读 `IOCTL_RAMFAN_QUERY_RESOURCE`（0x803）：返回 SMBus/NCT/SIO 登记状态与基址快照，不访问任何端口；用于验证 upper-filter 在 `\700`/`\0` 收到 PrepareHardware 并登记资源（预期 SmbusReady=1、NctReady=1、SioReady=1、HwComplete=1、基址 0x0b00/0x0290/0x002e）。
 - 下一步：重启系统使 testsigning 生效，管理员运行 `experiment-b-verify.ps1`（安装驱动包、restart 两个目标节点、只读 QUERY_RESOURCE 与事件日志检查）；结果与回滚记录将写回本节。`FEED_ONCE` 在实验 B 全程保持阻断，不写 NCT。
+
 ### 实验 B 进展（findings）
 
 - 路径 (a) 证伪：`pnputil /add-driver /install` 在无 function driver 的 PNP0C02 上失败（“function driver was not specified”），按预案切换到路径 (b) per-device UpperFilters。驱动包进入 DriverStore（oem6）会抢占 function 选择并导致 CM_PROB_REINSTALL(18)/0xC0000494，故安装方案改为：手动内核服务 RAMFanPnP（`%WinDir%\System32\drivers\ramfan.sys`）+ SetupAPI `SPDRP_UPPERFILTERS` 只绑 `\700`/`\0`，不保留含 Models 的 INF 包。
 - 测试签名加载：testsigning 开启后首次加载报错误 577（签名无法验证）。重新用 `/fd sha256 /ph`（页哈希）签名驱动后加载成功（RUNNING）。VBS/HVCI 均关闭。
 - 控制设备 IOCTL 全码返回 ERROR_INVALID_FUNCTION(1)：`EvtIoDeviceControl` 未收到任何 IRP。修复：创建串行队列后显式 `WdfDeviceConfigureRequestDispatching(device, ext->Queue, WdfRequestTypeDeviceControl)`（该 API 实参顺序为 Device/Queue/RequestType）；并新增 `EvtDriverUnload` 删除控制设备（此前驱动无法 `sc stop`，1052，无法热换驱动）。已重新构建并 `/ph` 签名 Release（21384B）。
 - 当前驱动（旧构建）仍在运行且无法卸载；系统需再重启一次以加载含修复的新驱动，随后运行 `experiment-b-verify.ps1` 完成 filter 挂载与 QUERY_RESOURCE 验证。节点目前处于干净状态（无 UpperFilters、无 DriverStore 残留、机器驱动恢复 machine.inf）。
+
 ### 实验 B 决定性验证：开机栈构建
 
 - 已确认 `\0`/`\700` 的驱动实例为 machine.inf（System 类 0012/0013），**Service 为空**——无功能驱动 FDO，PnP upper filter 运行期加挂被静默忽略（与 `pnputil /install` 报“未指定 function driver”一致）。
 - IOCTL 分发修复已验证生效（`WdfDeviceConfigureRequestDispatching` 后 QUERY_RESOURCE 正常返回，驱动手动加载 RUNNING）。
 - 最后一环未验证：开机时 PnP 从注册表构建设备栈会读取 UpperFilters。当前 `\700`/`\0` 已绑定 `UpperFilters=RAMFanPnP`（REG_MULTI_SZ），驱动文件已 `/ph` 签名置于 `drivers\ramfan.sys`，服务 RAMFanPnP 为 demand。重启后检查：若服务被 PnP 自动启动且 QUERY_RESOURCE 返回 HwComplete=1（基址 0x0b00/0x0290/0x002e）则绑定路径可行；否则判定 PNP0C02 upper-filter 路径不可行并触发 WORKFLOW.md §7。
+
 ### 实验 B 结论：PNP0C02 upper-filter 路径在本平台不可行（§7 触发记录）
 
 - 决定性负结果：`UpperFilters=RAMFanPnP` 在 `\700`/`\0` 就位后重启，开机栈构建仍未启动 RAMFanPnP（State=STOPPED）；手动 `sc start` 后驱动 RUNNING，但 QUERY_RESOURCE 全零——PnP 从未对两个节点调用 EvtDeviceAdd/PrepareHardware。节点无 problem code，仍为 machine.inf。
 - 根因：两个目标实例的驱动为 machine.inf（System 类 0012/0013）且 **Service 为空**（无功能驱动 FDO）。Windows 对无 function driver 的 legacy 设备不附加 upper filter（运行期 restart/disable-enable 与开机栈构建均不生效），与 `pnputil /install` 的“未指定 function driver”错误一致。这是平台固有属性，不是安装流程问题。
 - 影响与边界：资源持有节点无法承载 upper filter，原“两个 PNP0C02 upper-filter 持有 translated resources”的授权模型在此平台无法落地。按 WORKFLOW.md §7，不得以自声明端口方式绕过；FEED_ONCE 保持阻断，Windows 阶段 2 暂停于此，除非采用替代绑定模型（如把本驱动作为这两个节点的 function driver 安装——machine.inf 为空驱动，替换风险低，且 PrepareHardware 仍会收到该节点 translated resources，尚未验证）。
 - 已清理的实验副作用：UpperFilters 已从两个节点移除、RAMFanPnP 服务停止并删除、`System32\drivers\ramfan.sys` 删除、DriverStore 无 ramfan 包；节点恢复 machine.inf 干净状态。测试证书 RAMFanTestSign 与 testsigning 暂保留（为可能的 function-driver 验证与后续开发，须在交付前关闭并重启）。
+
 ### 实验 C 结论与 §7 最终记录
 
 - function-driver 替换同样被系统拒绝：`pnputil /add-driver /install`（function INF）报“function driver was not specified”；`SetupDiSetSelectedDriver+DIF_INSTALLDEVICE`（单节点 \700）返回 GLE 1784；`UpdateDriverForPlugAndPlayDevicesW(ACPI\PNP0C02, fn.inf, FORCE)` 返回 0xE0000219。三路安装机制均不可用。
@@ -253,6 +264,7 @@ outb((v & 0xf0) | page, 0x296)
 - **§7 判定（Windows PnP 资源绑定路径在本平台不可行）**：PNP0C02 目标实例由 machine.inf 提供且无 Service（无功能驱动 FDO），系统既不让 upper filter 附加（运行期与开机栈构建均验证失败），也拒绝以第三方 function driver 替换（pnputil/SetupDi/UpdateDriver 三路拒绝）。据此：无法在“绑定 PnP 设备并持有 translated resources”的授权模型下获得 SMBus 0xb00 与 NCT 0x290 的访问；按 AGENTS 约束不得自声明端口或绕过签名策略。Windows 阶段 2 保持阻断暂停，FEED_ONCE 继续返回 RAMFAN_FEED_HW_UNAVAILABLE，不写 NCT。
 - 保留的有效改进（未提交）：控制设备 IOCTL 分发修复（`WdfDeviceConfigureRequestDispatching`，实测 QUERY_RESOURCE 返回正常）、`EvtDriverUnload` 删除控制设备、只读 `IOCTL_RAMFAN_QUERY_RESOURCE`、签名需 `/ph` 页哈希的发现、experiment-b-prep/rollback 脚本（通用签名/清理工具）。这些在继续 Windows 工作或改用其他访问模型时复用。
 - 系统状态：testsigning 仍为 on、测试证书 RAMFanTestSign 仍在（供可能的后续开发）；恢复出厂需 `experiment-b-rollback.ps1 -RemoveCert`（关闭 testsigning 后需重启生效）。实机验证命令与日志：`patch/windows/experiment-b-logs/`（gitignore）。
+
 ## 2026-09-05 修复目标优先的工作流重规划
 
 - 已重写 `WORKFLOW.md`：将 Linux 已验证闭环列为当前可交付修复，不再继续投入已证伪的 `PNP0C02` upper-filter/function-driver 绑定路径。
@@ -260,7 +272,6 @@ outb((v & 0xf0) | page, 0x296)
 - 受控验证拆为只读身份门禁 → 只读 SMBus → 单次写回 → 动态闭环 → 失败路径 → 回滚，禁止直接恢复常驻服务。
 - 新工作流明确：不重做 PNP0C02 绑定、不用 WinRing0/InpOut32、不绕过签名策略、不刷 BIOS；任何身份误判、端口不稳定、超时不可恢复、读回不一致或回滚失败均回到 Linux 交付。
 - 当前待机主决策：是否批准上述受控非 PnP 访问模型。测试签名和测试证书仍是机器遗留状态；若不立即开展 Windows 试验，应执行 `patch/windows/experiment-b-rollback.ps1 -RemoveCert` 并重启。
-
 
 ## 2026-09-05 工作流复审修订
 
@@ -335,11 +346,28 @@ outb((v & 0xf0) | page, 0x296)
 - **实机验证**：压测 45-46°C 稳定 2.5min+ `FEED ok` 写回一致、零 WARN/FATAL；门禁只在启动时跑（缓存生效）。
 - **记录取舍**：M1-6 门禁负结果缓存 60s 会把单次探针失败放大为整分钟停喂（拒绝侧安全，目标机受控场景可接受，注释在 ramfan.c）；FATAL 判定存在瞬时误报窗口（服务注释口径，见 ramfan-service.c:337）；持续失败日志无大小上限（正式发布前加轮转）。
 
+## 2026-09-06 分发脚本与发布打包（install.ps1/uninstall.ps1/INSTALL.md/build-release.ps1）
 
-- `WORKFLOW.md`：Windows 当前实施和验收流程。
-- `archive/0.1/linux/`：Linux 0.1 的完整 LOG、WORKFLOW 和实现背景。
-- `ref/scripts/exp1_virtemp_probe.py`：Virtual_TEMP 目标寄存器与响应实验。
-- `ref/scripts/exp2_smbus_probe.py`：南桥 SMBus DIMM 读取实验。
-- `ref/scripts/sio_probe.py`、`sio_probe2.py`、`sio_dump.txt`：NCT/SIO 探测。
-- `ref/disasm/`、`ref/mods/`：固件逆向材料。
-- `ref/kernel/nct6775-core.c`：NCT 温度源和寄存器参考。
+- **背景**：机主目标用户可能只有 Windows PowerShell 5.1（无 pwsh）。分发文件先经子代理静态+实机审查（PS 5.1 与 7.6 双宿主、zh-CN 实测：sc.exe query 头部英文、缺服务错误本地化且不触发 ErrorActionPreference、$PSCommandPath 绝对化、Start-Process -ArgumentList 数组引号、提权子进程退出码传播）。
+- **审查修复（应用到 install.ps1/uninstall.ps1）**：S1-1 提权写死 pwsh.exe → 改当前宿主（`(Get-Process -Id $PID).Path`，回退 $PSHOME 按 PSEdition）；S1-2 文档/用法全 pwsh → powershell 前缀（两宿主通用）；S1-3 驱动/服务启动失败清理残留服务项 + 提示补 testsigning 未重启/证书缺失；M1-1 HVCI 判定改 WMI 实际运行态优先（注册表 Enabled 残留可能误报）；M1-2 补监控进程（HWiNFO/OHM 等）守护；M1-3 服务 exe 复制到 `C:\ProgramData\RAMFan` 稳定路径再注册（卸载删副本）；M1-4 sleep 改 Wait-Running 轮询；M1-5 卸载尽力 `sc stop`（容忍 1052）；M1-6 测试证书软校验提示。
+- **发布打包（build-release.ps1，commit e68c9c7）**：所有路径基于 `$PSScriptRoot` 推导不依赖 cwd；签名对象是发布副本（源保持未签，重跑不累积签名）；驱动 `/ph` 页哈希签名，服务 exe 普通签名；组装 `release/windows/`（gitignore 不入库）并压缩 `release/B850AIGA-RAM-FAN-PatchFix_Windows_TestSign.zip`（6 文件，32KB）。
+- **产物验证**：Release 重建后打包，签名 Successfully signed×2，`signtool verify /pa` 通过；zip 内容 6 文件完整。
+- **证书**：`RAMFanTestSign.cer` 从 LocalMachine\My 导出（公钥，820B，入库 `patch/windows/`），供驱动加载失败 577 时导入。
+- **实机状态**：打包期间需释放被 RAMFan 服务占用的 Release exe，已 `sc stop RAMFan`；当前服务 STOPPED、驱动仍加载（1052 无法热卸载）。发布流程完整实装验证前需先 uninstall 清理或按发布流程完整走一遍。
+
+## 2026-09-06 文档维护（anti-ai-vibes 中性写作规范）
+
+- 按机主要求以 anti-ai-vibes 规范重写/维护根 README.md、patch/windows/INSTALL.md、patch/windows/WINDOWS.md、根 WORKFLOW.md 与本 LOG.md。
+- 事实维护：README 更新为 GitHub release 分发视角（用户只下载打包内容，不接触源码路径）；WINDOWS/WORKFLOW 更新到方案 B + 分发脚本 + 发布 zip 状态；本 LOG 顶部当前状态/待办同步到 2026-09-06。
+- 移除 LOG.md 尾部无归属拼接残留（fe171b8 归档时带入的文件索引片段，非 LOG 记录体）。
+- 事实核对：release/linux 实际不存在（release/ 整体 gitignore、Linux 成品 tar.gz 另行分发），README/WORKFLOW 不再声称该目录。
+
+## 2026-09-06 公测版定案：一键安装 + 开机自启 + 无官方认证（机主决定）
+
+- **一键开启测试模式并完成安装**：安装脚本改为自动执行——testsigning OFF 自动 `bcdedit /set testsigning on`；内存完整性运行中或配置为启用自动关闭（注册表 DeviceGuard，`EnableVirtualizationBasedSecurity=0` 与 `...HypervisorEnforcedCodeIntegrity\Enabled=0`）；测试证书缺失自动导入同目录 `RAMFanTestSign.cer`（Root/TrustedPublisher）。Secure Boot 无法脚本关闭，检测到 ON 提示去 BIOS。任何改动需重启：脚本提示后退出，**重启后再次运行同一命令**完成安装。
+- **开机自启（AUTO_START）**：驱动服务 `RAMFanPnP` 改 `start= auto`；喂值服务 `--install` 改 `SERVICE_AUTO_START` 并声明依赖 `RAMFanPnP`（SCM 依赖数组双 null 结尾），保证开机顺序。此前 DEMAND_START 是开发过渡态，机主本次直接定案自启。
+- **卸载还原**：`uninstall.ps1` 新增 `-RestoreSecurity`——自动还原 testsigning（`bcdedit /deletevalue testsigning`）与内存完整性（注册表恢复 1），需重启生效；Secure Boot 提示自行回 BIOS；测试证书删除有风险（其他测试驱动可能共用）仅打印命令。
+- **无官方认证计划**：机主明确项目无资金与能力走 Microsoft Attestation/WHQL/EV 官方签名认证，相关开发文档已删减该计划性表述，公测测试签名版即最终交付形态。
+- **水印**：机主确认不提供关闭测试模式水印的工具；README 说明水印为 testsigning 开启的预期现象，随 testsigning 关闭（卸载还原）消失。
+- **改动文件**：`install.ps1`（自动配置+重启续装+AUTO_START）、`uninstall.ps1`（-RestoreSecurity）、`service/ramfan-service.c`（InstallService AUTO_START+依赖+描述）、`build-release.ps1`（取消自动 zip，改签名+组装+清单）、README.md、INSTALL.md、WINDOWS.md、WORKFLOW.md、AGENTS.md、LOG.md。构建/语法/签名验证通过。
+- **发布打包流程（后续）**：机主改用 7z 手动打包（`B850AIGA-RAM-FAN-PatchFix_Windows_TestSign.7z`，包内含根 README.md 与 LICENSE，共 8 文件）；build-release.ps1 不再自动压缩。

@@ -26,7 +26,8 @@ function Convert-RawTemperature {
 
 function Test-ValidTemperature {
     param([uint32]$Celsius)
-    return $Celsius -le 120
+    # 有效 1..120°C：0°C 是明显异常（空槽偶发 raw=0），屏蔽
+    return ($Celsius -ge 1) -and ($Celsius -le 120)
 }
 
 function Assert-Equal {
@@ -44,8 +45,8 @@ Assert-Equal 'Busy' (Get-SmbusStatusClass 0x01) 'HST_STS BUSY'
 Assert-Equal 'Busy' (Get-SmbusStatusClass 0x07) 'BUSY 优先于错误位'
 Assert-Equal 'Unknown' (Get-SmbusStatusClass 0x00) '0x00 -> Unknown（不冒充失败）'
 Assert-Equal 0 (Convert-RawTemperature 0) 'raw=0 -> 0°C'
-if (-not (Test-ValidTemperature 0)) {
-    throw '0°C 应为有效温度'
+if (Test-ValidTemperature 0) {
+    throw '0°C 必须被屏蔽（空槽偶发 raw=0 的明显异常）'
 }
 Assert-Equal 30 (Convert-RawTemperature 480) 'raw=480 -> 30°C'
 Assert-Equal 40 (Convert-RawTemperature 640) 'raw=640 -> 40°C'

@@ -232,8 +232,8 @@ RamFanSmbusReadWord(USHORT base, UCHAR addr7, UCHAR cmd,
 }
 
 /* ---- 温度换算：(raw << 3) >> 5，再 ×25/100 ----
- * 返回 ULONG（不截断），由调用方在 0..120 校验后才转 UCHAR；
- * 避免先截断把 256 等越界值折叠成 0°C 绕过范围检查。 */
+ * 返回 ULONG（不截断），由调用方按 RAMFAN_TEMP_MIN..MAX（1..120）校验后才转
+ * UCHAR；避免先截断把越界值折叠进有效范围绕过检查。 */
 ULONG
 RamFanCelsiusFromRaw(USHORT raw)
 {

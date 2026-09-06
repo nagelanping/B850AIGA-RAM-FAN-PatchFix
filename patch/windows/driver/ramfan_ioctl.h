@@ -66,8 +66,11 @@ extern "C" {
 // 禁止写 page 0x09 的曲线/模式/温度源寄存器
 #define NCT_VIRT_TEMP_PAGE 0x0c
 #define NCT_VIRT_TEMP_REG  0x36
-// ---- 温度范围（LOG.md：0..120°C 有效）----
-#define RAMFAN_TEMP_MIN 0
+// ---- 温度范围 ----
+// 有效 DIMM 温度 1..120°C：0°C 属明显异常（DDR 运行中不可能，通常是空槽
+// 偶发读回 raw=0 的垃圾），屏蔽——不得作为已装判定或写入值（2026-09-06 机主决定）。
+// 120°C 以上越界同样拒绝。
+#define RAMFAN_TEMP_MIN 1
 #define RAMFAN_TEMP_MAX 120
 
 // ---- SMBus 事务超时（100 ms）----

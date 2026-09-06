@@ -4,7 +4,7 @@
 
 - **Linux 0.1 已归档**：实现和完整 Linux 工作记录位于 `archive/0.1/linux/`；发布包仍在 `release/linux/`。
 - **当前工作目标**：实现 Windows KMDF 内核驱动 + Windows Service，持续向 NCT `Virtual_TEMP` 喂入 DIMM 温度。
-- **当前阶段**：§5.2 第 1 步身份门禁、第 2 步受控 SMBus 读取、第 3 步单次写回（FEED_ONCE）均已实机验证通过。`--once` 6 轮 `status=0 written=35 readback=35`，NCT Virtual_TEMP 写回与读回校验一致（commit `bbe11d3`）。下一步：机主批准常驻服务阶段（0.5s FEED_ONCE 循环 + 首轮已装映射）或先做动态温升联动。
+- **当前阶段**：§5.2 第 1/2/3 步与**常驻喂值阶段**均已实机验证通过（`ae32c06`）。常驻 0.5s FEED_ONCE 循环 + SCM（DEMAND_START）在目标机闭环成立：0.5s 周期读已装 DIMM 最高温→写 NCT Virtual_TEMP→读回一致，服务停止保留值、重启平滑。测试签名版已可交付机主自验动态温升联动；正式发布仍待可信签名。
 ## 根因与目标链路
 
 
@@ -314,7 +314,16 @@ outb((v & 0xf0) | page, 0x296)
 - **实机结果（agent 在目标机执行）**：加载新版驱动后 `--once` 共 6 轮——`0x53` OK 35°C、`0x51` OK 31°C（hst=0x02），`0x52`/`0x50` 空槽 BUS_ERR（hst=0x06）；每轮 **`status=0 max=35 written=35 readback=35`**：NCT Virtual_TEMP 实际写入 35°C 且重选页读回一致，驱动内完整序列（门禁→读→校验→写→读回→恢复页）成立。
 - **风扇物理响应**：写值落入 Linux 历史实测响应区间（30°C→pwm5=76≈1031rpm，40°C→pwm5=101≈1326rpm；35°C 应插值其间）；寄存器读回一致即 NCT 硬件已采纳该值参与曲线计算。动态温升/转速联动验收留待常驻阶段。
 - **风险/边界**：本阶段仍是每次手动 `--once` 触发，驱动卸载后（本会话已回滚删除服务）写值保留到 NCT 复位/重启；单次写回不构成持续喂养，不能作为长期修复，仅证明链路。
-- **下一步**：①机主批准进入常驻服务阶段（0.5s 调度 FEED_ONCE 循环 + SCM 服务 + 首轮已装映射），或②先做动态温升联动验证；常驻阶段需在驱动内加“已装地址映射”（M1-1）。
+
+## 2026-09-05 机主批准常驻喂值阶段，实机验证通过（commit `ae32c06`）
+
+- **批准**：机主批准常驻喂值阶段（服务端 0.5s FEED_ONCE 循环 + SCM DEMAND_START + 驱动内已装映射收紧）；动态温升联动由机主在测试版本上自行验证。
+- **驱动**：driver context 新增 `InstalledMask`（曾 OK 槽=已装确认）；已装槽本轮 BUS_ERR/TIMEOUT/BAD_DATA → 本轮整体失败不写（M1-1 收紧：不再把已装槽 CRC 当空槽忽略降速）；从未 OK 槽异常视为候选空槽忽略。`RamFanReadDimmTemp` 加 `gateDone` 参数，FEED 复用前置门禁，消除每轮双重身份探针。
+- **服务**：`ServiceMain` 身份门禁后进入 0.5s 周期 FEED_ONCE 循环；IO 失败关闭句柄退避重开；连续失败按 500/2000/5000ms 有限退避、日志按时间+次数节流防刷盘；识别恢复失败（sticky：全部槽 TIMEOUT+HstSts=0）输出独立 FATAL；停止事件所有等待点可退出；服务停止保留 NCT 值。`--install`/`--uninstall` 启用。
+- **子代理独立审查**：无 S1。M1-1（常驻循环 × sticky 恢复失败的运维缺口——服务端独立 FATAL 提示已实现）；L1 修复：双重门禁消除、恢复失败识别、失败后恢复可见性、死代码/过时文案清理。
+- **实机结果（agent 在目标机执行）**：加载新版驱动 → `--once` `status=0 written=34/35 readback 一致`；`--install` 后 `sc start RAMFan` RUNNING，观察 90s+：每轮 `FEED ok: max=3x written=3x readback=3x` 随 DIMM 温度动态波动（30↔35°C），写回一致、日志节流正常；`sc stop` 正常（SERVICE STOP，NCT 值保留不清理）；再次 `sc start` 平滑恢复（START→门禁→RUNNING→立即 FEED ok）。
+- **结论**：Windows 常驻喂值闭环在目标机成立——0.5s 周期读已装 DIMM 最高温→写 NCT Virtual_TEMP→读回一致，服务生命周期（启动/停止/重启）正常。测试签名版驱动+服务已具备交付给机主自验动态温升联动。
+- **风险/待办**：正式发布仍需可信签名（Attestation/WHQL）与独立访问依据（§7）；常驻验收（睡眠恢复/系统重启自动恢复）在机主测试版本自验中覆盖；`sc stop` 1052 无法热卸载驱动仅靠重启释放是已知平台限制。
 
 ## 参考资料
 

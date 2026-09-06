@@ -16,6 +16,7 @@ if ($q -match 'SERVICE_NAME: RAMFanPnP') {
     }
     '删除 RAMFanPnP 服务 ...'
     sc.exe delete RAMFanPnP 2>&1 | ForEach-Object { "  $_" }
+    Start-Sleep -Milliseconds 500   # 等 SCM 完成删除，避免 query 竞态误报
     $svcCheck = sc.exe query RAMFanPnP 2>&1
     if ($svcCheck -match 'SERVICE_NAME: RAMFanPnP') {
         Write-Host 'WARN: RAMFanPnP 服务仍存在，请手动检查。'

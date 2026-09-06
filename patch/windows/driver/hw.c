@@ -31,6 +31,7 @@ RamFanProbeFchSmbusController(BOOLEAN *foundOut, USHORT *baseOut)
     PKEY_BASIC_INFORMATION basic = NULL;
     ULONG fullSize = 0;
     ULONG basicSize = 0;
+    ULONG retLen = 0;      /* ZwEnumerateKey 输出长度：必须与输入 basicSize 分离 */
     ULONG index;
     BOOLEAN found = FALSE;
 
@@ -81,8 +82,14 @@ RamFanProbeFchSmbusController(BOOLEAN *foundOut, USHORT *baseOut)
         UNICODE_STRING name;
 
         status = ZwEnumerateKey(key, index, KeyBasicInformation,
-                                basic, basicSize, &basicSize);
+                                basic, basicSize, &retLen);
         if (!NT_SUCCESS(status)) {
+            /* 溢出/失败：Buffer 按 MaxNameLen 分配，理论不应发生；跳过该键即可 */
+            continue;
+        }
+        /* NameLength 是 ULONG 字节数；超 USHORT 或越出缓冲则跳过（防御） */
+        if (basic->NameLength > basicSize ||
+            basic->NameLength > (ULONG)MAXUSHORT) {
             continue;
         }
         name.Length = (USHORT)basic->NameLength;

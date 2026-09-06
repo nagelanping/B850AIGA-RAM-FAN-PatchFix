@@ -348,7 +348,7 @@ ServiceMain(DWORD argc, LPWSTR *argv)
                         }
                     }
                     if (allTimeoutZero && consecFails >= 1 && !fatalLogged) {
-                        LogMessage("FATAL: SMBus 控制器恢复失败（sticky），喂值已停摆；",
+                        LogMessage("FATAL: SMBus 控制器恢复失败（sticky），喂值已停摆；%s",
                                    "需重载驱动或重启");
                         fatalLogged = 1;
                     }
@@ -424,11 +424,18 @@ InstallService(void)
         return 1;
     }
     if (svc == NULL) {
+        /* 已存在：重开以更新描述 */
         svc = OpenServiceW(scm, RAMFAN_SERVICE_NAME, SERVICE_ALL_ACCESS);
+        if (svc == NULL) {
+            printf("OpenService 失败 GLE=%lu\n", GetLastError());
+            CloseServiceHandle(scm);
+            return 1;
+        }
     }
-    if (svc != NULL) {
-        desc.lpDescription = (LPWSTR)L"RAMFan VirtualTEMP Feeder（受控试验；常驻 0.5s 喂值，DEMAND_START）";
-    }
+    desc.lpDescription =
+        (LPWSTR)L"RAMFan VirtualTEMP Feeder（受控试验；常驻 0.5s 喂值，DEMAND_START）";
+    ChangeServiceConfig2W(svc, SERVICE_CONFIG_DESCRIPTION, &desc);
+    CloseServiceHandle(svc);
     CloseServiceHandle(scm);
     printf("服务已安装（DEMAND_START）。启动：sc start RAMFan\n");
     return 0;

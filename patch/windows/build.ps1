@@ -1,4 +1,4 @@
-# build.ps1 — 构建 ramfan 驱动与服务（x64 Debug/Release）
+﻿# build.ps1 — 构建 ramfan 驱动与服务（x64 Debug/Release）
 # 前置：已安装 VS Build Tools 2022（含 C++ 负载）与 WDK 10。
 # 用法：pwsh -File build.ps1 [-Configuration Debug|Release]
 param(

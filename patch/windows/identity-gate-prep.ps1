@@ -1,4 +1,4 @@
-# identity-gate-prep.ps1 — 身份门禁阶段准备与实机只读验证（管理员，机主执行）
+﻿# identity-gate-prep.ps1 — 身份门禁阶段准备与实机只读验证（管理员，机主执行）
 # 模型：非 PnP KMDF 控制设备驱动（2026-09-05 机主批准）。无 INF、无 PnP 绑定。
 # 流程：检查环境 → 用测试证书签名 ramfan.sys（/ph 页哈希）→ 复制到
 #       %WinDir%\System32\drivers → sc create RAMFanPnP (type= kernel, demand)

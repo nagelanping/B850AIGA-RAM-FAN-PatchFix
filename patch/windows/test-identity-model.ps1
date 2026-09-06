@@ -1,4 +1,4 @@
-# test-identity-model.ps1 — 编译并运行身份门禁判定纯逻辑自检（无驱动加载、无端口）
+﻿# test-identity-model.ps1 — 编译并运行身份门禁判定纯逻辑自检（无驱动加载、无端口）
 [CmdletBinding()]
 param()
 $ErrorActionPreference = 'Stop'

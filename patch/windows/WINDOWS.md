@@ -1,4 +1,4 @@
-# RamFan（Windows 补丁）— 受控非 PnP 访问
+# RAM-FAN（Windows 补丁）— 受控非 PnP 访问
 
 把 DIMM 温度持续喂给 NCT6796D 的 `Virtual_TEMP`（SIO 页 `0x0c` / reg `0x36`），使 `FAN5=MEM_FAN` 在 BIOS 数据源为“内存温度”时按 BIOS 曲线运行。
 
@@ -66,7 +66,7 @@ pwsh -NoProfile -File .\build-release.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-第一遍运行：检测 Secure Boot（ON 则提示去 BIOS 关闭，脚本不能改）→ testsigning OFF 则自动 `bcdedit /set testsigning on` → 内存完整性运行/配置为启用则自动关闭（注册表）→ 测试证书缺失则自动导入同目录 RAMFanTestSign.cer → 有上述改动则提示重启。重启后再次运行同一脚本完成安装：复制驱动到 `%WinDir%\System32\drivers\ramfan.sys`，`sc create RAMFanPnP`（type= kernel, **auto**），复制服务到 `C:\ProgramData\RAMFan\ramfan-service.exe` 并 `--install`（AUTO_START + 依赖 RAMFanPnP），`sc start` 两者（0.5s 常驻喂值）。卸载脚本 `uninstall.ps1` 支持 `-RestoreSecurity` 自动还原 testsigning/内存完整性。
+第一遍运行：检测 Secure Boot（ON 则提示去 BIOS 关闭，脚本不能改）→ testsigning OFF 则自动 `bcdedit /set testsigning on` → 内存完整性运行/配置为启用则自动关闭（注册表）→ 测试证书缺失则自动导入同目录 RAMFanTestSign.cer → 有上述改动则提示重启。重启后再次运行同一脚本完成安装：复制驱动到 `%WinDir%\System32\drivers\ramfan.sys`，`sc create RAMFanPnP`（type= kernel, **auto**），复制服务到 `C:\ProgramData\RAMFan\ramfan-service.exe` 并 `--install`（AUTO_START + 依赖 RAMFanPnP），`sc start` 两者（0.5s 常驻喂值）。
 
 安装后验证：
 
@@ -75,7 +75,7 @@ Get-Content C:\ProgramData\RAMFan\ramfan.log -Tail 20   # 观察喂值循环
 C:\ProgramData\RAMFan\ramfan-service.exe --once          # 单次读→写回并读回校验
 ```
 
-卸载：运行 `uninstall.ps1`（自动提权），停删 `RAMFan`/`RAMFanPnP` 服务、删驱动文件与 `ProgramData\RAMFan\ramfan-service.exe` 副本。
+卸载：运行 `uninstall.ps1`（自动提权），停删 `RAMFan`/`RAMFanPnP` 服务、删驱动文件与 `ProgramData\RAMFan\ramfan-service.exe` 副本，并默认关闭 testsigning（需重启生效）。
 
 开发用实机脚本（机主或受权 agent 执行）：`identity-gate-prep.ps1` / `identity-gate-rollback.ps1`，与分发脚本并存，用于开发阶段逐级验证（身份门禁、SMBus 读取、写回）。历史结果见 `LOG.md` 2026-09-05 条目：QUERY_HW `SMBusBase=0x0b00 ChipId=d802 HwMatched=1`；`--dimm` 已装 `0x53/0x51` OK、空槽 `0x50/0x52` BUS_ERR；`--once` 6 轮 `status=0 written/readback 一致`；常驻 RUNNING 0.5s 每轮 FEED ok 写回一致。
 
@@ -96,16 +96,16 @@ C:\ProgramData\RAMFan\ramfan-service.exe --once          # 单次读→写回并
 
 ## 组件
 
-| 组件           | 文件                                                              | 说明                                                                                                                   |
-| -------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| 内核驱动       | `driver/ramfan.c`、`driver/hw.c`、`driver/identity_model.c` | 非 PnP 控制设备；门禁 + 读取 + 写回 + 温度屏蔽/重试                                                                    |
-| 身份判定纯逻辑 | `driver/identity_model.h`、`driver/identity_model.c`          | 无 WDF 依赖：chip id 匹配判定，宿主自检使用                                                                            |
-| 共享定义       | `driver/ramfan_ioctl.h`                                         | IOCTL、固定目标端口白名单、硬件常量                                                                                    |
-| 用户态服务     | `service/ramfan-service.c`                                      | `--identity`/`--dimm`/`--once`；SCM 常驻 0.5s 循环（`--install`/`--uninstall`）                              |
-| 构建           | `build.ps1`                                                     | 定位 VS/WDK，x64 Debug/Release                                                                                         |
-| 发布打包       | `build-release.ps1`                                             | 签名发布副本 + 组装`release/windows/`（含根 README/LICENSE），打印包内容清单                                         |
-| 分发安装       | `install.ps1`、`uninstall.ps1`                                | 自动提权；一键配置环境（testsigning/HVCI/证书）+ 重启续装 + AUTO_START 部署；卸载支持`-RestoreSecurity`；PS 5.1 兼容 |
-| 安装说明       | `INSTALL.md`                                                    | 面向测试版用户的安装/卸载/风险说明                                                                                     |
-| 测试证书       | `RAMFanTestSign.cer`                                            | 公钥证书（驱动加载失败 577 时导入）                                                                                    |
-| 开发脚本       | `identity-gate-prep.ps1`、`identity-gate-rollback.ps1`        | 签名 + 加载驱动 + 运行检查（机主/受权 agent 执行）                                                                     |
-| 历史工具       | `experiment-b-prep.ps1`、`experiment-b-rollback.ps1`          | 证书/签名/清理通用工具；`experiment-b-logs/` 结果不入库                                                              |
+| 组件           | 文件                                                              | 说明                                                                                                             |
+| -------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| 内核驱动       | `driver/ramfan.c`、`driver/hw.c`、`driver/identity_model.c` | 非 PnP 控制设备；门禁 + 读取 + 写回 + 温度屏蔽/重试                                                              |
+| 身份判定纯逻辑 | `driver/identity_model.h`、`driver/identity_model.c`          | 无 WDF 依赖：chip id 匹配判定，宿主自检使用                                                                      |
+| 共享定义       | `driver/ramfan_ioctl.h`                                         | IOCTL、固定目标端口白名单、硬件常量                                                                              |
+| 用户态服务     | `service/ramfan-service.c`                                      | `--identity`/`--dimm`/`--once`；SCM 常驻 0.5s 循环（`--install`/`--uninstall`）                        |
+| 构建           | `build.ps1`                                                     | 定位 VS/WDK，x64 Debug/Release                                                                                   |
+| 发布打包       | `build-release.ps1`                                             | 签名发布副本 + 组装`release/windows/`（含根 README/LICENSE），打印包内容清单                                   |
+| 分发安装       | `install.ps1`、`uninstall.ps1`                                | 自动提权；一键配置环境（testsigning/HVCI/证书）+ 重启续装 + AUTO_START 部署；卸载默认关 testsigning；PS 5.1 兼容 |
+| 安装说明       | `INSTALL.md`                                                    | 面向测试版用户的安装/卸载/风险说明                                                                               |
+| 测试证书       | `RAMFanTestSign.cer`                                            | 公钥证书（驱动加载失败 577 时导入）                                                                              |
+| 开发脚本       | `identity-gate-prep.ps1`、`identity-gate-rollback.ps1`        | 签名 + 加载驱动 + 运行检查（机主/受权 agent 执行）                                                               |
+| 历史工具       | `experiment-b-prep.ps1`、`experiment-b-rollback.ps1`          | 证书/签名/清理通用工具；`experiment-b-logs/` 结果不入库                                                        |

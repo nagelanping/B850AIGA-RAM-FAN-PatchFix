@@ -1,4 +1,4 @@
-# 只读 SMBus/DIMM 逻辑自检。不会打开设备、访问端口或加载驱动。
+﻿# 只读 SMBus/DIMM 逻辑自检。不会打开设备、访问端口或加载驱动。
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 

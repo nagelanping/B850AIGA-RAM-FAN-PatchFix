@@ -1,4 +1,4 @@
-# identity-gate-rollback.ps1 — 身份门禁阶段回滚（管理员，机主执行）
+﻿# identity-gate-rollback.ps1 — 身份门禁阶段回滚（管理员，机主执行）
 # 删除 RAMFanPnP 服务、删除 System32\drivers\ramfan.sys。
 # 注意：内核驱动二进制一旦加载，sc stop 可能返回 1052、文件被占用，
 # 只能通过重启释放；服务注册表项删除后，重启不会再次自动加载该驱动。

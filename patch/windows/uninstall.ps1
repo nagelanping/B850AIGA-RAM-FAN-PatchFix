@@ -1,24 +1,20 @@
-# uninstall.ps1 — RAMFan Virtual_TEMP 补丁卸载（自动请求 UAC 提权）
+﻿# uninstall.ps1 — RAMFan Virtual_TEMP 补丁卸载（自动请求 UAC 提权）
 #
 # 删除：喂值服务 RAMFan、内核驱动服务 RAMFanPnP、System32\drivers\ramfan.sys。
+# 同时默认关闭 testsigning（与 install.ps1 自动开启对应，需重启生效）。
 # 注意：
 #   - 内核驱动一旦加载，sc stop 可能返回 1052、ramfan.sys 被占用无法删除，
 #     只能靠重启释放；服务项删除后重启不会自动再加载，无残留风险。
 #   - 卸载不清除 NCT 最后写入的 Virtual_TEMP 值（保留到 NCT 复位/系统重启）。
-#   - 还原安全设置：默认只打印命令，不自动改。加 -RestoreSecurity 则自动还原
-#     testsigning 与内存完整性（脚本安装时自动开启/关闭的项），需重启生效；
-#     测试证书删除有风险（其他测试驱动可能共用），仅打印命令由你决定。
+#   - 不自动改内存完整性（HVCI）设置，不删测试证书（可能被其他测试驱动共用），
+#     两者只打印命令，由你自行决定。Secure Boot 同理，需自行回 BIOS 开启。
 #
 # 用法（普通权限即可，自动请求 UAC）：
 #   powershell -NoProfile -ExecutionPolicy Bypass -File .\uninstall.ps1
-#   powershell -NoProfile -ExecutionPolicy Bypass -File .\uninstall.ps1 -RestoreSecurity
 #   pwsh -NoProfile -ExecutionPolicy Bypass -File .\uninstall.ps1   # PS7
 #
 [CmdletBinding()]
-param(
-    # 还原脚本安装时自动改的安全设置（testsigning/内存完整性），需重启生效
-    [switch]$RestoreSecurity
-)
+param()
 $ErrorActionPreference = 'Stop'
 
 function Fail([string]$msg) {
@@ -39,7 +35,6 @@ if (-not $isAdmin) {
     }
     Write-Host '需要管理员权限，正在请求提升（UAC）...'
     $args2 = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"")
-    if ($RestoreSecurity) { $args2 += '-RestoreSecurity' }
     try {
         $p = Start-Process -FilePath $hostExe -ArgumentList $args2 -Verb RunAs -Wait -PassThru
     } catch {
@@ -104,28 +99,21 @@ if (Test-Path $dstSys) {
     }
 }
 
-if ($RestoreSecurity) {
-    Write-Host ''
-    Write-Host '还原脚本自动修改的安全设置 ...' -ForegroundColor Yellow
-    Write-Host '  关闭 testsigning（bcdedit /deletevalue testsigning）...'
-    & "$env:WINDIR\System32\bcdedit.exe" /deletevalue testsigning 2>&1 | ForEach-Object { Write-Host "    $_" }
-    $dgKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard'
-    New-Item -Path $dgKey -Force | Out-Null
-    New-ItemProperty -Path $dgKey -Name 'EnableVirtualizationBasedSecurity' -PropertyType DWord -Value 1 -Force | Out-Null
-    $scKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity'
-    New-Item -Path $scKey -Force | Out-Null
-    New-ItemProperty -Path $scKey -Name 'Enabled' -PropertyType DWord -Value 1 -Force | Out-Null
-    Write-Host '  已配置内存完整性重新启用（等同 Windows 安全中心界面开启）。'
-    Write-Host ''
-    Write-Host '=== 安全设置已还原，需重启生效 ===' -ForegroundColor Green
-    Write-Host 'Secure Boot：安装要求你手动关闭过，请自行回 BIOS 重新开启（本脚本不碰 BIOS）。'
-    Write-Host '测试证书 RAMFanTestSign（可选删除，其他测试驱动可能共用）：'
-    Write-Host '  Get-ChildItem Cert:\LocalMachine\Root, Cert:\LocalMachine\TrustedPublisher |'
-    Write-Host "    Where-Object { \$_.Subject -like '*RAMFanTestSign*' } | Remove-Item"
-} else {
-    Write-Host ''
-    Write-Host '=== 卸载完成 ==='
-    Write-Host '如需还原安装时自动修改的安全设置，加 -RestoreSecurity 重跑本脚本（需重启生效）：'
-    Write-Host '  powershell -NoProfile -ExecutionPolicy Bypass -File .\uninstall.ps1 -RestoreSecurity'
-    Write-Host 'Secure Boot：若你手动关闭过，请自行回 BIOS 重新开启。'
-}
+# ---- 4. 关闭 testsigning（与安装脚本自动开启对应；Secure Boot 关闭后必须开启 testsigning 才能加载测试驱动，故一并还原）----
+Write-Host ''
+Write-Host '关闭 testsigning（bcdedit /deletevalue testsigning）...' -ForegroundColor Yellow
+& "$env:WINDIR\System32\bcdedit.exe" /deletevalue testsigning 2>&1 | ForEach-Object { Write-Host "    $_" }
+if ($LASTEXITCODE -ne 0) { Write-Host 'WARN: bcdedit /deletevalue testsigning 失败，请以管理员重试。' -ForegroundColor Yellow }
+
+Write-Host ''
+Write-Host '=== 卸载完成，需重启生效 ===' -ForegroundColor Green
+Write-Host '重启后 testsigning 关闭、水印消失；两个服务项已删，驱动不会自动再加载。'
+Write-Host 'Secure Boot：安装时若你在 BIOS 关闭过，卸载后请自行回 BIOS 重新开启（本脚本不碰 BIOS）。'
+Write-Host '内存完整性（HVCI）与测试证书未自动改动；如需恢复/删除（自行决定）：'
+Write-Host '  # 重新启用内存完整性：Windows 安全中心 → 设备安全性 → 内核隔离 → 内存完整性 → 开'
+Write-Host '  或者（管理员）：'
+Write-Host "    New-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard' -Name EnableVirtualizationBasedSecurity -PropertyType DWord -Value 1 -Force"
+Write-Host "    New-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity' -Name Enabled -PropertyType DWord -Value 1 -Force"
+Write-Host '  删除测试证书（其他测试驱动可能共用，谨慎）：'
+Write-Host '  Get-ChildItem Cert:\LocalMachine\Root, Cert:\LocalMachine\TrustedPublisher |'
+Write-Host "    Where-Object { \$_.Subject -like '*RAMFanTestSign*' } | Remove-Item"

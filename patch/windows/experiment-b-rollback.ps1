@@ -1,4 +1,4 @@
-# experiment-b-rollback.ps1 — 实验 B 回滚（管理员）
+﻿# experiment-b-rollback.ps1 — 实验 B 回滚（管理员）
 # 卸载驱动包、清除 PNP0C02 UpperFilters 残留、删除服务、恢复 testsigning。
 [CmdletBinding()]
 param(

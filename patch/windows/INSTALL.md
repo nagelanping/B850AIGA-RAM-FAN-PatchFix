@@ -27,7 +27,8 @@
 | 测试证书`RAMFanTestSign` | 已导入        | 脚本自动导入包内`RAMFanTestSign.cer` 到 Root/TrustedPublisher |
 
 > 关闭 Secure Boot / 内存完整性会降低系统安全姿态。这些是本补丁测试签名驱动的运行前提，由用户决定是否安装。
-> 卸载后可用 `uninstall.ps1 -RestoreSecurity` 自动还原 testsigning 与内存完整性；Secure Boot 需自行回 BIOS 开启。
+> 卸载运行 `uninstall.ps1` 会默认关闭 testsigning（需重启生效）；Secure Boot 需自行回 BIOS 开启。
+> **内存完整性与 VBS：关闭内存完整性会连带停用基于虚拟化的安全（VBS）相关组件。部分依赖 VBS 的游戏反作弊组件（内核级反作弊）可能因此报错或无法启动；玩此类游戏且需要内存完整性时不安装本补丁。**
 
 ## 安装
 
@@ -68,17 +69,15 @@
 powershell -NoProfile -ExecutionPolicy Bypass -File .\uninstall.ps1
 ```
 
-停止/删除服务与驱动文件。若 `ramfan.sys` 因驱动仍加载而无法删除，重启后
-即可移除（服务项已删除，重启不会自动加载）。卸载不清除 NCT 最后写入值
-（保留到 NCT 复位/系统重启），风扇会保持最后写入的转速直到重启。
+停止/删除服务与驱动文件，并默认关闭 testsigning（与安装自动开启对应，**需重启生效**）。
+若 `ramfan.sys` 因驱动仍加载而无法删除，重启后即可移除（服务项已删除，重启不会自动加载）。
+卸载不清除 NCT 最后写入值（保留到 NCT 复位/系统重启），风扇会保持最后写入的转速直到重启。
 
-还原安装时自动修改的安全设置（可选）：
+卸载脚本不自动改动项（由你自行决定）：
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\uninstall.ps1 -RestoreSecurity   # 需重启生效
-```
-
-`-RestoreSecurity` 自动还原 testsigning（关闭）与内存完整性（重新启用）。Secure Boot 需自行回 BIOS 开启。测试证书删除有风险（其他测试驱动可能共用），脚本只打印删除命令。
+- Secure Boot：安装时在 BIOS 关闭过则自行回 BIOS 重新开启。
+- 内存完整性（HVCI）：如需重新启用，Windows 安全中心 → 设备安全性 → 内核隔离 → 内存完整性 → 开。
+- 测试证书删除有风险（其他测试驱动可能共用），脚本只打印删除命令。
 
 ## 已知边界与风险
 

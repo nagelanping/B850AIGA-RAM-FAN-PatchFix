@@ -1,4 +1,4 @@
-# install.ps1 — RAMFan Virtual_TEMP 补丁安装（测试签名公测版，自动请求 UAC 提权）
+﻿# install.ps1 — RAMFan Virtual_TEMP 补丁安装（测试签名公测版，自动请求 UAC 提权）
 #
 # 适用：MAXSUN MS-iCraft B850 AIGA（PCI DEV_790B + NCT chip id 0xd802）内存风扇
 #       曲线重启失效修复。驱动读取 DIMM 温度并持续写入 NCT6796D Virtual_TEMP
@@ -142,10 +142,15 @@ if (-not $SkipCheck) {
 
     if ($needsReboot) {
         Write-Host ''
-        Write-Host '=== 需要重启 ===' -ForegroundColor Yellow
-        Write-Host '已开启 testsigning 和/或关闭内存完整性，这些改动重启后才生效。'
-        Write-Host '请重启系统，然后再次运行本脚本完成驱动与服务的安装：'
+        Write-Host '========== 需要重启系统 ==========' -ForegroundColor Yellow
+        Write-Host '已开启 testsigning / 关闭内存完整性，这些改动重启后才生效。'
+        Write-Host ''
+        Write-Host '【注意】重启后不会自动完成安装。' -ForegroundColor Red
+        Write-Host '重启完成后，请【再次运行本脚本】才会安装驱动与服务：' -ForegroundColor Red
+        Write-Host ''
         Write-Host "  powershell -NoProfile -ExecutionPolicy Bypass -File '$($MyInvocation.MyCommand.Path)'"
+        Write-Host ''
+        Write-Host '（重启后再次运行：若环境已满足，脚本会直接安装，无需再改设置。）'
         exit 0
     }
 }

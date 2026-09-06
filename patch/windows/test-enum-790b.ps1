@@ -1,4 +1,4 @@
-# test-enum-790b.ps1 — Enum\PCI 前缀枚举判定自检（无驱动加载、无端口访问）
+﻿# test-enum-790b.ps1 — Enum\PCI 前缀枚举判定自检（无驱动加载、无端口访问）
 # 镜像 driver/hw.c RamFanProbeFchSmbusController 的注册表前缀匹配逻辑：
 # 遍历 HKLM\SYSTEM\CurrentControlSet\Enum\PCI 子键，若存在以
 # VEN_1022&DEV_790B 开头的 hardware id 即判定 ControllerFound=1。

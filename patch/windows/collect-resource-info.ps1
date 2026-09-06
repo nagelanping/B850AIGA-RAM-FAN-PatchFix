@@ -1,4 +1,4 @@
-# collect-resource-info.ps1 - read-only Windows PnP resource and status report
+﻿# collect-resource-info.ps1 - read-only Windows PnP resource and status report
 # Does not install drivers, access I/O ports, or change system settings.
 [CmdletBinding()]
 param(

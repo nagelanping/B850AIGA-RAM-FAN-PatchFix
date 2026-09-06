@@ -90,7 +90,7 @@ Linux 版本已实机验证并交付，是当前可用的修复。Windows 版本
 
 - 面向高级用户的公测版。安装脚本一键处理环境：自动开启 testsigning、关闭内存完整性（HVCI）、导入测试证书；Secure Boot 需在 BIOS/UEFI 手动关闭（脚本检测到 ON 时提示）。需要重启时脚本提示，重启后再次运行同一命令完成安装。
 - 驱动 `RAMFanPnP` 与喂值服务 `RAMFan` 均为 AUTO_START（开机自启）；`RAMFan` 服务依赖 `RAMFanPnP`，保证开机加载顺序。
-- 卸载脚本 `uninstall.ps1` 支持 `-RestoreSecurity`：自动还原 testsigning（关闭）与内存完整性（重新启用），需重启生效；Secure Boot 需自行回 BIOS 开启；测试证书删除有风险（其他测试驱动可能共用），仅打印命令。
+- 卸载脚本 `uninstall.ps1` 默认关闭 testsigning（需重启生效）；Secure Boot 需自行回 BIOS 开启；内存完整性（HVCI）与测试证书不自动改，脚本打印相应命令。
 - 分发脚本兼容 Windows PowerShell 5.1（提权用当前宿主重启）。
 - 单一版本源在 `patch/windows/`；`build-release.ps1` 组装到 `release/windows/`（不入库），压缩由发布者手动完成（7z）。
 - 桌面“测试模式”水印是 testsigning 开启的 Windows 标识，属预期现象；随 testsigning 关闭（即卸载还原）而消失。补丁不提供隐藏水印工具。
@@ -101,7 +101,7 @@ Linux 版本已实机验证并交付，是当前可用的修复。Windows 版本
 
 - x64 Release 构建、静态检查、纯逻辑自检、安装/卸载/回滚验证通过。
 - 签名验证：`.sys` 页哈希签名与 `ramfan-service.exe` 签名均通过 `signtool verify`。
-- 安装脚本一键配置路径（自动 testsigning/HVCI/证书 + 重启续装）与 `-RestoreSecurity` 卸载还原路径完整实测。
+- 安装脚本一键配置路径（自动 testsigning/HVCI/证书 + 重启续装）与卸载路径（含默认关 testsigning）完整实测。
 - 由独立子代理审查寄存器、SMBus 状态、温度换算、IOCTL 边界、并发、失败策略、签名和回滚后，才允许提交/打包。
 
 ## 7. Linux 交付路线（维护边界）

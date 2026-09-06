@@ -82,7 +82,7 @@ outb((v & 0xf0) | page, 0x296)
 5. ✅ 2026-09-05：受控 SMBus 读取（§5.2 第 2 步）、单次写回 FEED_ONCE（第 3 步）、常驻喂值阶段均逐级获批并实机验证（见下方日期条目）。
 6. ✅ 2026-09-06：压测假失败根治（方案 B + 单槽重试 + 门禁缓存，commit `4b8466e`）；最终子代理审查无 S1。
 7. ✅ 2026-09-06：分发脚本与发布打包（`install.ps1`/`uninstall.ps1`/`INSTALL.md`/`build-release.ps1`），发布目录已组装（手动 7z）。
-8. ⬜ 机主自验公测版：一键安装（含自动配置与重启续装）→ 动态温升联动 → 睡眠/重启自动恢复（AUTO_START）→ 卸载与 `-RestoreSecurity` 还原。
+8. ⬜ 机主自验公测版：一键安装（含自动配置与重启续装）→ 动态温升联动 → 睡眠/重启自动恢复（AUTO_START）→ 卸载（默认关 testsigning）。
 9. ⬜ 自验通过后对外分发公测版（测试签名形态，无官方认证计划）。
 
 ## 风险与禁止事项
@@ -366,8 +366,8 @@ outb((v & 0xf0) | page, 0x296)
 
 - **一键开启测试模式并完成安装**：安装脚本改为自动执行——testsigning OFF 自动 `bcdedit /set testsigning on`；内存完整性运行中或配置为启用自动关闭（注册表 DeviceGuard，`EnableVirtualizationBasedSecurity=0` 与 `...HypervisorEnforcedCodeIntegrity\Enabled=0`）；测试证书缺失自动导入同目录 `RAMFanTestSign.cer`（Root/TrustedPublisher）。Secure Boot 无法脚本关闭，检测到 ON 提示去 BIOS。任何改动需重启：脚本提示后退出，**重启后再次运行同一命令**完成安装。
 - **开机自启（AUTO_START）**：驱动服务 `RAMFanPnP` 改 `start= auto`；喂值服务 `--install` 改 `SERVICE_AUTO_START` 并声明依赖 `RAMFanPnP`（SCM 依赖数组双 null 结尾），保证开机顺序。此前 DEMAND_START 是开发过渡态，机主本次直接定案自启。
-- **卸载还原**：`uninstall.ps1` 新增 `-RestoreSecurity`——自动还原 testsigning（`bcdedit /deletevalue testsigning`）与内存完整性（注册表恢复 1），需重启生效；Secure Boot 提示自行回 BIOS；测试证书删除有风险（其他测试驱动可能共用）仅打印命令。
+- **卸载默认关 testsigning**（后续修正，取代早期 -RestoreSecurity 方案）：`uninstall.ps1` 删服务/驱动文件后默认执行 `bcdedit /deletevalue testsigning`（需重启生效），与安装自动开启对应；内存完整性（HVCI）与测试证书不自动改（避免改变本机基态），脚本打印相应命令。
 - **无官方认证计划**：机主明确项目无资金与能力走 Microsoft Attestation/WHQL/EV 官方签名认证，相关开发文档已删减该计划性表述，公测测试签名版即最终交付形态。
 - **水印**：机主确认不提供关闭测试模式水印的工具；README 说明水印为 testsigning 开启的预期现象，随 testsigning 关闭（卸载还原）消失。
-- **改动文件**：`install.ps1`（自动配置+重启续装+AUTO_START）、`uninstall.ps1`（-RestoreSecurity）、`service/ramfan-service.c`（InstallService AUTO_START+依赖+描述）、`build-release.ps1`（取消自动 zip，改签名+组装+清单）、README.md、INSTALL.md、WINDOWS.md、WORKFLOW.md、AGENTS.md、LOG.md。构建/语法/签名验证通过。
+- **改动文件**：`install.ps1`（自动配置+重启续装+AUTO_START）、`uninstall.ps1`（卸载默认关 testsigning）、`service/ramfan-service.c`（InstallService AUTO_START+依赖+描述）、`build-release.ps1`（取消自动 zip，改签名+组装+清单）、README.md、INSTALL.md、WINDOWS.md、WORKFLOW.md、AGENTS.md、LOG.md。构建/语法/签名验证通过。
 - **发布打包流程（后续）**：机主改用 7z 手动打包（`B850AIGA-RAM-FAN-PatchFix_Windows_TestSign.7z`，包内含根 README.md 与 LICENSE，共 8 文件）；build-release.ps1 不再自动压缩。

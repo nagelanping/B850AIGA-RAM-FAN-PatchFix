@@ -3,19 +3,19 @@
 把 DIMM 温度持续喂给 NCT6796D 的 `Virtual_TEMP`（SIO 页 `0x0c` reg `0x36`），
 使 `FAN5=MEM_FAN` 在 BIOS 数据源为“内存温度”时按 BIOS 曲线运行。
 
-**当前阶段**（2026-09-05）：身份门禁、SMBus 读取、FEED_ONCE 单次写回、常驻 0.5s 喂值服务均实机验证通过（测试签名版）。
+**当前阶段**（2026-09-06）：身份门禁、SMBus 读取、FEED_ONCE、常驻 0.5s 喂值、方案 B（温度屏蔽+单槽重试+门禁缓存）均实机验证通过并经压测（测试签名版）。
 PnP 绑定（upper-filter / function-driver）已在实验 B/C 证伪并删除；驱动不再接收 `EvtDeviceAdd`/translated resources。
 
 - 驱动以普通内核服务加载（`sc create RAMFanPnP type= kernel`），创建非 PnP 控制设备 `\Device\RamFanVirtTemp`。
 - `IOCTL_RAMFAN_QUERY_HW`：系统 PnP 枚举确认 PCI `DEV_790B` + NCT chip id（标准 SIO `0x2e/0x2f`）的拒绝式门禁。
 - `IOCTL_RAMFAN_READ_DIMM_TEMP`：受控 SMBus 读取（`0xb00` 事务寄存器，命令 `0x31`，地址 `0x53..0x50`）。
-- `IOCTL_RAMFAN_FEED_ONCE`：读取→校验→最高温→NCT page `0x0c`/reg `0x36` 写回并读回校验；页保存/恢复。已装槽异常（BUS_ERR/TIMEOUT/BAD_DATA）整体失败不写（映射收紧）。
+- `IOCTL_RAMFAN_FEED_ONCE`：读取→校验→最高温→NCT page `0x0c`/reg `0x36` 写回并读回校验；页保存/恢复。方案 B：每轮全读 4 槽，有效温度 1..120°C（0°C 屏蔽），单槽瞬时垃圾/超时同轮重试一次；无任一 OK 槽才整轮不写。身份门禁 60s 缓存心跳。
 - 服务：`--identity` 门禁、`--dimm` 读取实验、`--once` 单次写回；SCM 常驻 0.5s FEED_ONCE 循环（`--install`/`--uninstall`，DEMAND_START），连续失败退避、恢复失败独立 FATAL、日志节流、停止保留 NCT 值。
 ## 组件
 
 | 组件 | 文件 | 说明 |
 | ---- | ---- | ---- |
-| 内核驱动 | `driver/ramfan.c`、`driver/hw.c`、`driver/identity_model.c` | 非 PnP 控制设备；门禁 + 读取 + 写回 + 已装映射 |
+| 内核驱动 | `driver/ramfan.c`、`driver/hw.c`、`driver/identity_model.c` | 非 PnP 控制设备；门禁 + 读取 + 写回 + 温度屏蔽/重试 |
 | 身份判定纯逻辑 | `driver/identity_model.h`、`driver/identity_model.c` | 无 WDF 依赖：chip id 匹配判定，宿主自检使用 |
 | 共享定义 | `driver/ramfan_ioctl.h` | IOCTL、固定目标端口白名单、硬件常量 |
 | 用户态服务 | `service/ramfan-service.c` | `--identity`/`--dimm`/`--once`；SCM 常驻 0.5s 循环（`--install`/`--uninstall`） |
@@ -114,7 +114,7 @@ pwsh -File .\patch\windows\identity-gate-rollback.ps1
 
 - 控制设备 ACL 仅 SYSTEM/管理员；`--identity` 由管理员运行。
 - 标准 SIO `0x2e/0x2f` 是主板级共享端口；测试前停止 HWiNFO/OpenHardwareMonitor 等工具。
-- 写回只写 NCT page `0x0c`/reg `0x36`（Virtual_TEMP）；不写曲线/模式/温度源。已装槽异常本轮不写（整体失败），连续失败旧值过期是已知热安全风险，不伪装成完整 fail-safe。
+- 写回只写 NCT page `0x0c`/reg `0x36`（Virtual_TEMP）；不写曲线/模式/温度源。无任一有效温度槽时才整轮不写（保留旧值）；连续失败旧值过期是已知热安全风险，不伪装成完整 fail-safe。
 - 测试签名版不伪装正式发布；正式交付需 Microsoft Attestation/WHQL 等可信签名。
 - 服务停止/驱动卸载不清除 NCT 最后写入值（保留到 NCT 复位/重启）。
 - `sc stop` 1052：内核驱动一旦加载无法热卸载，靠重启释放文件（服务项删除后无自载风险）。

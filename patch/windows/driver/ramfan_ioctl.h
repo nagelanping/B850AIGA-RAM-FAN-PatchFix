@@ -73,6 +73,9 @@ extern "C" {
 #define RAMFAN_TEMP_MIN 1
 #define RAMFAN_TEMP_MAX 120
 
+// ---- 身份门禁缓存（FEED 高频路径每 60s 心跳重跑；QUERY_HW 诊断不缓存） ----
+#define RAMFAN_GATE_CACHE_SECONDS 60
+
 // ---- SMBus 事务超时（100 ms）----
 #define RAMFAN_SMBUS_TIMEOUT_MS 100
 

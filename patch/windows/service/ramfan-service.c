@@ -363,6 +363,16 @@ ServiceMain(DWORD argc, LPWSTR *argv)
                         now - lastWarnTick >= 5000) {
                         LogMessage("WARN: FEED_ONCE status=%u max=%u (连续 %lu)",
                                    feed.Status, feed.MaxCelsius, consecFails);
+                        /* 诊断：打印各槽明细区分 TIMEOUT/BUS_ERR/0°C/越界 */
+                        {
+                            int j;
+                            for (j = 0; j < RAMFAN_SPD_ADDR_COUNT; j++) {
+                                const RAMFAN_DIMM_RESULT *s = &feed.Slots[j];
+                                LogMessage("  slot 0x%02x: st=%u raw=0x%04x t=%u°C hst=0x%02x",
+                                           s->Address, s->Status, s->Raw,
+                                           s->Celsius, s->HstSts);
+                            }
+                        }
                         lastWarnTick = now;
                     }
                 }

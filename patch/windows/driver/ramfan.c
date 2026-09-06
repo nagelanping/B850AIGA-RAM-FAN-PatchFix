@@ -24,9 +24,13 @@ typedef struct _RAMFAN_DRIVER_CONTEXT {
     LONG ActiveUsers;
     KEVENT ActiveUsersZero;
     BOOLEAN Removing;          /* EvtDriverUnload 已开始 */
-    /* 无跨 IOCTL 状态：每轮全读 4 槽并屏蔽异常温度（0°C/越界）只取有效最高温。
-     * 不做空槽隔离状态机——空槽偶发 BUS_ERR/0°C 垃圾被温度过滤排除，
-     * 无永久累积污染路径（2026-09-06 机主方案 B）。 */
+    /* 身份门禁缓存（M1-5 折中，2026-09-06 机主决定）：chip id/控制器存在性在运行中
+     * 不变，FEED 高频路径每 60s 才重跑一次门禁（注册表枚举 + 0x2e/0x2f 探针），
+     * 其余轮次用缓存结果。仅串行队列内 FEED 读写，无需额外锁。 */
+    BOOLEAN GateCached;
+    BOOLEAN GateMatched;
+    LARGE_INTEGER GateStamp;   /* QPC 时间戳（上次门禁时刻） */
+    LARGE_INTEGER GateFreq;    /* QPC 频率（DriverEntry 记录一次） */
 } RAMFAN_DRIVER_CONTEXT;
 
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(RAMFAN_DRIVER_CONTEXT, RamFanGetDriverContext);
@@ -102,6 +106,36 @@ RamFanQueryHw(RAMFAN_QUERY_HW_OUT *out)
     return STATUS_SUCCESS;
 }
 
+/* ---- 带缓存的身份门禁（FEED 高频路径用；60s 心跳，M1-5） ----
+ * chip id/控制器存在性运行中不变；FEED 每轮跳过门禁只查缓存，超过 60s
+ * （QPC 计时）才重跑 RamFanQueryHw。返回匹配结果；QUERY_HW IOCTL 仍走
+ * 无缓存的 RamFanQueryHw（诊断语义）。串行队列内调用，缓存无锁。
+ */
+static BOOLEAN
+RamFanIdentityCached(RAMFAN_DRIVER_CONTEXT *ctx)
+{
+    LARGE_INTEGER now;
+
+    now = KeQueryPerformanceCounter(NULL);
+    if (ctx->GateCached &&
+        now.QuadPart - ctx->GateStamp.QuadPart <
+            ctx->GateFreq.QuadPart * RAMFAN_GATE_CACHE_SECONDS) {
+        return ctx->GateMatched;
+    }
+
+    /* 缓存缺失或过期：重跑门禁 */
+    {
+        RAMFAN_QUERY_HW_OUT hw;
+        NTSTATUS st;
+        RtlZeroMemory(&hw, sizeof(hw));
+        st = RamFanQueryHw(&hw);
+        ctx->GateMatched = NT_SUCCESS(st) && hw.HwMatched;
+        ctx->GateStamp = KeQueryPerformanceCounter(NULL);
+        ctx->GateCached = TRUE;
+    }
+    return ctx->GateMatched;
+}
+
 /* ---- 读 DIMM 槽温度（受控 SMBus，§5.2 第 2/3 步 + 常驻） ----
  * slotMask：bit i = 读 kSpdAddrs[i] 槽（0x53,0x52,0x51,0x50）。mask 位为 0 的槽
  * 不访问 SMBus（Status=UNCHECKED）。READ_DIMM_TEMP/FEED 当前都用全 mask
@@ -140,45 +174,61 @@ RamFanReadDimmTemp(BOOLEAN gateDone, UCHAR slotMask,
 
     for (i = 0; i < RAMFAN_SPD_ADDR_COUNT; i++) {
         RAMFAN_DIMM_RESULT *slot = &out->Slots[i];
-        USHORT raw = 0;
-        UCHAR hst = 0;
-        ULONG c;
+        UCHAR attempt;
+        UCHAR lastHst = 0;
 
         slot->Address = kSpdAddrs[i];
+        slot->Status = RAMFAN_DIMM_UNCHECKED;
         if (!(slotMask & (1u << i))) {
-            slot->Status = RAMFAN_DIMM_UNCHECKED;
             continue;
         }
 
-        status = RamFanSmbusReadWord(RAMFAN_SMBUS_RESOURCE_START,
+        /* 每槽最多两次尝试：第一轮瞬时垃圾（raw=0xffxx/hst 无数据）或超时
+         * 时立即重试一次，消除偶发空档（2026-09-06 机主决定）。
+         * BUS_ERR 不重试：空槽 NACK 是稳定常态，重试只会徒增 SMBus 流量。 */
+        for (attempt = 0; attempt < 2; attempt++) {
+            USHORT raw = 0;
+            UCHAR hst = 0;
+            NTSTATUS st;
+            ULONG c;
+
+            st = RamFanSmbusReadWord(RAMFAN_SMBUS_RESOURCE_START,
                                      kSpdAddrs[i], SPD_CMD_TEMP,
                                      &raw, &hst);
-        slot->HstSts = hst;
+            lastHst = hst;
+            slot->HstSts = hst;
 
-        if (NT_SUCCESS(status)) {
-            c = RamFanCelsiusFromRaw(raw);
-            if (c < RAMFAN_TEMP_MIN || c > RAMFAN_TEMP_MAX) {
-                /* 成功事务但读数越界/异常（含 0°C）不可信 */
-                slot->Status = RAMFAN_DIMM_BAD_DATA;
-                slot->Raw = raw;
-            } else {
-                slot->Status = RAMFAN_DIMM_OK;
-                slot->Raw = raw;
-                slot->Celsius = (UCHAR)c;
-                anySuccess = 1;
-                if (c > maxC) {
-                    maxC = (UCHAR)c;
+            if (NT_SUCCESS(st)) {
+                c = RamFanCelsiusFromRaw(raw);
+                if (c >= RAMFAN_TEMP_MIN && c <= RAMFAN_TEMP_MAX) {
+                    /* 有效温度：接受，结束本槽重试 */
+                    slot->Status = RAMFAN_DIMM_OK;
+                    slot->Raw = raw;
+                    slot->Celsius = (UCHAR)c;
+                    anySuccess = 1;
+                    if (c > maxC) {
+                        maxC = (UCHAR)c;
+                    }
+                    break;
                 }
+                /* 成功事务但读数越界/异常（含 0°C）：视为瞬时垃圾，
+                 * 若已到第二次则记为 BAD_DATA */
+                if (attempt == 1) {
+                    slot->Status = RAMFAN_DIMM_BAD_DATA;
+                    slot->Raw = raw;
+                }
+            } else if (st == STATUS_IO_TIMEOUT ||
+                       st == STATUS_DEVICE_BUSY) {
+                if (attempt == 1) {
+                    slot->Status = RAMFAN_DIMM_TIMEOUT;
+                }
+            } else {
+                /* STATUS_DATA_ERROR 等：BUS_ERR（空槽/CRC），不重试 */
+                slot->Status = RAMFAN_DIMM_BUS_ERR;
+                break;
             }
-        } else if (status == STATUS_IO_TIMEOUT ||
-                   status == STATUS_DEVICE_BUSY) {
-            slot->Status = RAMFAN_DIMM_TIMEOUT;
-        } else if (status == STATUS_DATA_ERROR) {
-            /* 0x04 无法区分空槽 NACK 与 CRC/总线异常（LOG 已确认） */
-            slot->Status = RAMFAN_DIMM_BUS_ERR;
-        } else {
-            slot->Status = RAMFAN_DIMM_BUS_ERR;
         }
+        slot->HstSts = lastHst;
         count++;
     }
 
@@ -199,9 +249,8 @@ RamFanReadDimmTemp(BOOLEAN gateDone, UCHAR slotMask,
  * 调用方（EvtIoDeviceControl）在驱动锁/串行队列内。
  */
 static NTSTATUS
-RamFanFeedOnce(RAMFAN_FEED_ONCE_OUT *out)
+RamFanFeedOnce(RAMFAN_DRIVER_CONTEXT *ctx, RAMFAN_FEED_ONCE_OUT *out)
 {
-    RAMFAN_QUERY_HW_OUT hw;
     RAMFAN_READ_DIMM_OUT rd;
     UCHAR rb = 0;
     UCHAR maxC = 0;
@@ -213,9 +262,8 @@ RamFanFeedOnce(RAMFAN_FEED_ONCE_OUT *out)
         out->Slots[i].Status = RAMFAN_DIMM_UNCHECKED;
     }
 
-    /* 身份门禁：不匹配 → HW_MISMATCH，零事务 */
-    status = RamFanQueryHw(&hw);
-    if (!NT_SUCCESS(status) || !hw.HwMatched) {
+    /* 身份门禁（60s 缓存心跳）：不匹配 → HW_MISMATCH，零事务 */
+    if (!RamFanIdentityCached(ctx)) {
         out->Status = RAMFAN_FEED_HW_MISMATCH;
         return STATUS_SUCCESS;
     }
@@ -360,6 +408,7 @@ DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
         return status;
     }
     KeInitializeEvent(&ctx->ActiveUsersZero, NotificationEvent, TRUE);
+    KeQueryPerformanceCounter(&ctx->GateFreq);   /* 身份门禁缓存计时基准 */
 
     return RamFanCreateDevice(driver);
 }
@@ -403,10 +452,13 @@ RamFanEvtIoDeviceControl(WDFQUEUE Queue,
     PVOID outBuffer = NULL;
     size_t outLen = 0;
     WDFDEVICE device;
+    RAMFAN_DRIVER_CONTEXT *ctx;
 
     UNREFERENCED_PARAMETER(InputBufferLength);
 
     device = WdfIoQueueGetDevice(Queue);
+    ctx = RamFanGetDriverContext(WdfDeviceGetDriver(device));
+
     if (!RamFanBeginIo(device)) {
         /* 驱动正在卸载 */
         WdfRequestCompleteWithInformation(Request, STATUS_DELETE_PENDING, 0);
@@ -467,7 +519,7 @@ RamFanEvtIoDeviceControl(WDFQUEUE Queue,
             status = STATUS_BUFFER_TOO_SMALL;
             break;
         }
-        status = RamFanFeedOnce(&out);
+        status = RamFanFeedOnce(ctx, &out);
         if (!NT_SUCCESS(status)) {
             break;
         }
